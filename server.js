@@ -25,6 +25,9 @@ import {
   removeImage,
   setupProgress,
   recentPostbacks,
+  lastPostbackEvent,
+  lastPostbackSignal,
+  markConversionAsTest,
   MAX_IMAGE_BYTES,
 } from './src/products.js'
 import { checkPage } from './src/verify.js'
@@ -229,6 +232,15 @@ async function handlePublic(req, res, url) {
     }
     params.delete('key')
     const r = recordPostback(db, params)
+    const event = {
+      at: new Date().toISOString(),
+      kind: r.test ? 'teste' : r.refund ? 'reembolso' : 'venda',
+      duplicate: r.duplicate,
+      // O que a plataforma mandou, sem a chave.
+      params: Object.fromEntries([...params].map(([k, v]) => [k, String(v).slice(0, 200)]).slice(0, 20)),
+    }
+    setSetting(db, 'postback_last', event)
+    if (r.test) setSetting(db, 'postback_test', event)
     console.log(
       `[postback] ${r.duplicate ? 'duplicado' : r.refund ? 'reembolso' : r.test ? 'teste' : 'venda'} pedido=${r.orderId} subid=${r.subid} valor=${r.amount} tipo=${r.type}`,
     )
@@ -434,6 +446,17 @@ async function handleAdmin(req, res, url) {
     return send(res, 404, 'não encontrado')
   }
 
+  if (path === '/postbacks/ultimo' && method === 'GET') {
+    return send(res, 200, JSON.stringify(lastPostbackEvent(db)), 'application/json; charset=utf-8')
+  }
+
+  const mt = path.match(/^\/postbacks\/(\d+)\/teste$/)
+  if (mt && method === 'POST') {
+    markConversionAsTest(db, Number(mt[1]))
+    const back = new URL(req.headers.referer || '/configuracoes', 'http://x')
+    return redirect(res, back.pathname + back.search)
+  }
+
   if (path === '/configuracoes' && method === 'POST') {
     const name = String(new URLSearchParams(await readBody(req)).get('conversion_name') || '').trim()
     if (conversionNameError(name)) return redirect(res, '/configuracoes?erro=1')
@@ -442,9 +465,7 @@ async function handleAdmin(req, res, url) {
   }
 
   if (path === '/configuracoes' && method === 'GET') {
-    const lastPostback = db
-      .prepare(`SELECT created_at FROM conversions WHERE status != 'test' ORDER BY created_at DESC LIMIT 1`)
-      .get()
+    const lastPostback = lastPostbackSignal(db)
     return html(
       res,
       settingsPage({

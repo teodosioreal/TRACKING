@@ -72,6 +72,7 @@ button:hover,.btn:hover{border-color:var(--muted)}
 .btn.primary,button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
 .btn.danger,button.danger{color:var(--bad)}
 .actions{display:flex;flex-wrap:wrap;gap:8px;margin:4px 0 12px}
+button.mini{padding:3px 9px;font-size:12px}td form{margin:0}
 .check{list-style:none;margin:0;padding:0}.check li{display:flex;gap:12px;padding:13px 18px;border-bottom:1px solid var(--line)}.check li:last-child{border-bottom:0}
 .check .ic{flex:none;width:26px;height:26px;border-radius:999px;display:flex;align-items:center;justify-content:center;font-weight:700}
 .check .s-ok .ic{background:var(--okbg);color:var(--ok)}.check .s-wait .ic{background:var(--soft);color:var(--muted);border:1px solid var(--line)}.check .s-bad .ic{background:var(--badbg);color:var(--bad)}.check .s-warn .ic{background:var(--warnbg);color:var(--warn)}
@@ -121,6 +122,13 @@ details.howto{border:1px solid var(--line);border-radius:10px;margin:8px 0;backg
 details.howto>ol,details.howto>p,details.howto>table{margin:0 14px 12px}details.howto table td{white-space:normal;vertical-align:top;padding:6px 8px}
 .imgrow{display:flex;gap:16px;align-items:center;flex-wrap:wrap}.imgrow .actions{margin:0}.imgrow form{margin:0}
 @media (max-width:900px){.grid2{grid-template-columns:1fr}.phead-prog{width:100%}}
+.live{display:flex;gap:12px;align-items:flex-start;padding:14px 16px;border:1px dashed var(--line);border-radius:12px;background:var(--soft);margin:10px 0 14px}
+.live b{display:block}.live span{color:var(--muted);font-size:13px;display:block}.live .params{margin-top:6px;word-break:break-all}.live .params code{background:var(--card);border:1px solid var(--line);border-radius:5px;padding:1px 5px;margin:2px 4px 2px 0;display:inline-block}
+.live.fresh{border:1px solid var(--ok);background:var(--okbg)}.live.fresh b{color:var(--ok)}
+.live .ic{flex:none;width:26px;height:26px;border-radius:999px;background:var(--ok);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700}
+.pulse{flex:none;width:12px;height:12px;margin:5px 7px;border-radius:999px;background:var(--accent);animation:pulse 1.4s ease-in-out infinite;display:block}
+@keyframes pulse{0%,100%{opacity:.25;transform:scale(.8)}50%{opacity:1;transform:scale(1)}}
+@media (prefers-reduced-motion:reduce){.pulse{animation:none}}
 @media (max-width:1100px){.kpis.minor{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media (max-width:900px){.top-in{padding:0 16px;gap:12px;flex-wrap:wrap}.logo{padding:10px 0}.mainnav{order:3;width:100%;margin:0 -4px}.mainnav a{padding:10px 8px}.mainnav svg{display:none}
 .content{padding:18px 16px 48px}.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.kpis.minor{grid-template-columns:repeat(2,minmax(0,1fr))}.filters{width:100%}.filters form,.filters select{width:100%}}
@@ -133,6 +141,17 @@ navigator.clipboard.writeText(document.getElementById(b.dataset.copy).textConten
 document.addEventListener('click',e=>{const b=e.target.closest('[data-copy-input]');if(!b)return;
 navigator.clipboard.writeText(document.getElementById(b.dataset.copyInput).value.trim());const t=b.textContent;b.textContent='Copiado ✓';setTimeout(()=>b.textContent=t,1400)})
 document.addEventListener('submit',e=>{const m=e.target.dataset.confirm;if(m&&!confirm(m))e.preventDefault()})
+const pbl=document.getElementById('pb-live');
+if(pbl){const t0=Date.now(),esc=v=>String(v).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]);
+const ago=s=>s<60?'há '+s+'s':s<3600?'há '+Math.round(s/60)+' min':'há '+Math.round(s/3600)+' h';
+const draw=async()=>{try{const ev=await(await fetch('/postbacks/ultimo')).json();
+if(!ev){pbl.className='live';pbl.innerHTML='<span class="pulse"></span><div><b>Aguardando postback…</b><span>Clique em <b>Test</b> no postback da BuyGoods. O aviso aparece aqui em segundos.</span></div>';return}
+const at=new Date(ev.at).getTime(),fresh=at>=t0-2000,secs=Math.max(0,Math.round((Date.now()-at)/1000));
+const label={teste:'Teste da plataforma recebido',venda:'Venda recebida',reembolso:'Reembolso recebido'}[ev.kind]||'Postback recebido';
+const pairs=Object.entries(ev.params||{}).map(([k,v])=>'<code>'+esc(k)+'='+esc(v)+'</code>').join(' ');
+pbl.className='live '+(fresh?'fresh':'old');
+pbl.innerHTML=(fresh?'<div class="ic">✓</div>':'<span class="pulse"></span>')+'<div><b>'+(fresh?label+'!':'Aguardando postback…')+'</b><span>'+(fresh?'Chegou '+ago(secs)+'. O postback está funcionando.':'Último recebido: '+label.toLowerCase()+' '+ago(secs)+'. Clique em <b>Test</b> na BuyGoods para conferir agora.')+(ev.duplicate?' (pedido repetido, ignorado nos números)':'')+'</span>'+(pairs?'<span class="params">'+pairs+'</span>':'')+'</div>'}catch(e){}};
+draw();setInterval(draw,3000)}
 document.querySelectorAll('[data-chart]').forEach(ch=>{const tip=ch.querySelector('.tip');
 ch.querySelectorAll('.col').forEach(c=>{c.addEventListener('mouseenter',()=>{tip.innerHTML=c.dataset.tip;tip.hidden=false;
 const r=ch.getBoundingClientRect(),cr=c.getBoundingClientRect();let x=cr.left-r.left+cr.width/2-tip.offsetWidth/2;
@@ -516,6 +535,14 @@ export function checklistHtml(product, st, { tz }) {
   return `<ul class="check">${items.join('')}</ul>`
 }
 
+const LIVE = '<div class="live" id="pb-live"><span class="pulse"></span><div><b>Carregando…</b></div></div>'
+
+// Ação para corrigir uma venda que era teste da plataforma.
+const markTest = (r) =>
+  r.status === 'approved'
+    ? `<form method="post" action="/postbacks/${r.id}/teste" data-confirm="Marcar este postback como teste? Ele sai dos totais e da planilha do Google Ads."><button type="submit" class="mini">Era teste</button></form>`
+    : ''
+
 export const PRODUCT_TABS = {
   status: 'Status',
   script: '1. Script',
@@ -605,6 +632,8 @@ ${copy('postback', generic, 'Copiar modelo')}
 <tr><td><code>[NÚMERO DO PEDIDO]</code></td><td>ID da transação/pedido (evita contar duas vezes)</td></tr>
 <tr><td><code>[COMISSÃO]</code></td><td>valor da sua comissão (vai para o Google Ads)</td></tr>
 <tr><td><code>[TIPO DO EVENTO]</code></td><td>venda, reembolso... (opcional; reembolsos saem da planilha)</td></tr></tbody></table>
+<p style="margin-top:12px">Se a plataforma tiver botão de teste do postback, clique nele. O aviso aparece aqui:</p>
+${LIVE}
 <p class="muted" style="margin-top:10px">O rastreador também aceita os nomes <code>clickid</code>, <code>cid</code> ou <code>s1</code> no lugar de <code>subid</code>, e <code>commission</code>, <code>payout</code> ou <code>sum</code> no lugar de <code>amount</code>.</p></div></section>
 <section><h3><span class="num">3</span> Confira o que está chegando</h3>
 ${table(
@@ -613,7 +642,9 @@ ${table(
     { label: 'Tipo', html: (r) => esc(r.type) },
     { label: 'Pedido', html: (r) => esc(r.order_id) },
     { label: 'Ligada a', html: (r) => (r.produto ? `<span class="tag ok">${esc(r.produto)}</span>` : r.visita ? '<span class="tag warn">visita sem produto</span>' : r.subid ? '<span class="tag warn">ID sem visita registrada</span>' : '<span class="tag bad">sem ID</span>') },
+    { label: 'Status', html: saleStatus },
     { label: 'Comissão', n: 1, html: (r) => money(r.amount, currency) },
+    { label: '', html: markTest },
   ],
   postbacks,
   'Nenhum postback recebido ainda.',
@@ -636,7 +667,9 @@ ${table(
                   ? '<span class="tag warn">subid sem visita registrada</span>'
                   : '<span class="tag bad">sem subid</span>',
         },
+        { label: 'Status', html: saleStatus },
         { label: 'Comissão', n: 1, html: (r) => money(r.amount, currency) },
+        { label: '', html: markTest },
       ],
       postbacks,
       'Nenhum postback recebido ainda. Depois de cadastrar, a primeira venda aparece aqui.',
@@ -651,6 +684,8 @@ ${table(
 <ol><li>No painel, abra o menu da sua conta (canto superior direito) e entre em <b>Postback Pixels</b>. Em algumas contas o caminho é <b>Profile → Postback Pixels</b>.</li>
 <li>Clique em <b>Add New</b>, cole a URL abaixo e salve.</li></ol>
 ${copy('postback', postback, 'Copiar postback')}
+<p><b>3. Teste:</b> na BuyGoods, clique em <b>Test</b> (ou “Send test”) no postback que você cadastrou. O aviso aparece aqui:</p>
+${LIVE}
 <p class="warn"><b>Não</b> cadastre o mesmo postback também dentro das configurações de uma oferta: a BuyGoods dispara duas vezes. O rastreador ignora pedido repetido, mas o certo é ter só o global.</p>
 <details class="howto"><summary>O que cada parte da URL significa</summary><table><tbody>
 <tr><td><code>{SUBID}</code></td><td>ID da visita que o script colocou no link. É assim que a venda é ligada ao anúncio.</td></tr>
@@ -792,6 +827,7 @@ export function settingsPage({ base, key, conversionName, currency, days, lastPo
 
 <section><h3>BuyGoods — postback (um só para todos os produtos)</h3><div class="box">
 ${copy('postback', postback)}
+${LIVE}
 <p>${lastPostback ? `<span class="ok">✓ Último postback recebido ${ago(lastPostback.created_at)} (${esc(when(lastPostback.created_at, tz))}).</span>` : '<span class="muted">Nenhum postback recebido ainda.</span>'}</p>
 </div></section>
 

@@ -193,9 +193,7 @@ export function productStatus(db, product) {
         WHERE c.product_id = ? AND v.status IN ('approved','refunded') ORDER BY v.created_at DESC LIMIT 1`,
     )
     .get(product.id)
-  const anyPostback = db
-    .prepare(`SELECT created_at FROM conversions WHERE status != 'test' ORDER BY created_at DESC LIMIT 1`)
-    .get()
+  const anyPostback = lastPostbackSignal(db)
   const pendingForGoogle = db
     .prepare(
       `SELECT COUNT(*) AS n FROM conversions v JOIN clicks c ON c.id = v.subid
@@ -223,10 +221,32 @@ export function productStatus(db, product) {
 export function recentPostbacks(db, limit = 10) {
   return db
     .prepare(
-      `SELECT v.created_at, v.type, v.order_id, v.amount, v.status, v.subid, v.product AS codename,
+      `SELECT v.id, v.created_at, v.type, v.order_id, v.amount, v.status, v.subid, v.product AS codename,
               p.name AS produto, c.id AS visita
          FROM conversions v LEFT JOIN clicks c ON c.id = v.subid LEFT JOIN products p ON p.id = c.product_id
-        WHERE v.status != 'test' ORDER BY v.created_at DESC LIMIT ?`,
+        ORDER BY v.created_at DESC, v.id DESC LIMIT ?`,
     )
     .all(limit)
+}
+
+// Último sinal de que o postback está chegando: uma venda real ou um teste
+// disparado pela própria plataforma. Devolve { created_at } ou null.
+export function lastPostbackSignal(db) {
+  const real = db
+    .prepare(`SELECT created_at FROM conversions WHERE status != 'test' ORDER BY created_at DESC LIMIT 1`)
+    .get()
+  const test = getSetting(db, 'postback_test')
+  const times = [real?.created_at, test?.at].filter(Boolean).sort()
+  return times.length ? { created_at: times.at(-1) } : null
+}
+
+// Último postback recebido pela URL (venda, reembolso ou teste da plataforma),
+// para o aviso ao vivo do painel.
+export function lastPostbackEvent(db) {
+  return getSetting(db, 'postback_last')
+}
+
+// Corrige uma venda que na verdade era teste: sai dos totais e da planilha.
+export function markConversionAsTest(db, id) {
+  return db.prepare(`UPDATE conversions SET status = 'test' WHERE id = ? AND status = 'approved'`).run(id).changes > 0
 }

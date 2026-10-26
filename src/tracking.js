@@ -95,6 +95,9 @@ export function recordPing(db, { pid, url, links, test }, now = new Date()) {
 }
 
 const TEST_RE = /^(teste|test)$/i
+// Teste disparado pela plataforma (ex.: botão "Test" do postback da BuyGoods):
+// "test" em algum campo, ou nem ID da visita nem número de pedido.
+const PLATFORM_TEST_RE = /test/i
 const REFUND_RE = /refund|chargeback|cancel|reembolso|estorno/i
 
 // Postback da BuyGoods. Aceita vários nomes de parâmetro para não depender
@@ -107,7 +110,10 @@ export function recordPostback(db, params, now = new Date()) {
   const amount = Number.parseFloat(String(amountRaw ?? '0').replace(',', '.')) || 0
   const product = pick(params, ['product', 'produto', 'product_codename'])
   const isRefund = REFUND_RE.test(type)
-  const isTest = TEST_RE.test(type)
+  const isTest =
+    TEST_RE.test(type) ||
+    [subid, orderId, type, product].some((v) => v && PLATFORM_TEST_RE.test(v)) ||
+    (!subid && !orderId)
 
   const res = db
     .prepare(

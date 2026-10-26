@@ -201,3 +201,26 @@ test('verificação: script funciona no navegador mas visitante recebe cópia do
   const gtm = await checkPage(product, async () => ({ ok: true, status: 200, headers: new Headers(), text: async () => '<script src="https://www.googletagmanager.com/gtm.js?id=GTM-ABC123"></script>' }))
   assert.match(gtm, /Google Tag Manager/)
 })
+
+test('teste da plataforma não vira venda e conta como postback funcionando', async () => {
+  const { lastPostbackSignal, markConversionAsTest } = await import('../src/products.js')
+  const { setSetting } = await import('../src/db.js')
+  const { db, a } = withProducts()
+  // Sem ID de visita e sem pedido (macros vazias): teste.
+  assert.equal(recordPostback(db, form({ amount: '10' })).test, true)
+  // "test" em qualquer campo: teste.
+  assert.equal(recordPostback(db, form({ subid: 'TEST_SUBID', order: '123', amount: '10' })).test, true)
+  assert.equal(recordPostback(db, form({ subid: 'x', order: 'TEST-ORDER', amount: '10' })).test, true)
+  // Venda real sem visita (orgânica) continua venda.
+  assert.equal(recordPostback(db, form({ order: 'BG55', amount: '10' })).test, false)
+  const d = dashboard(db, 'tudo', 'America/Sao_Paulo')
+  assert.equal(d.totals.vendas, 1)
+  assert.equal(lastPostbackSignal(withProducts().db), null)
+  setSetting(db, 'postback_test', { at: '2099-01-01T00:00:00.000Z' })
+  assert.equal(lastPostbackSignal(db).created_at, '2099-01-01T00:00:00.000Z')
+  // Corrigir uma venda que era teste.
+  const id = db.prepare("SELECT id FROM conversions WHERE order_id = 'BG55'").get().id
+  assert.equal(markConversionAsTest(db, id), true)
+  assert.equal(dashboard(db, 'tudo', 'America/Sao_Paulo').totals.vendas, 0)
+  void a
+})
