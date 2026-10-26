@@ -1,7 +1,7 @@
 // Script do Google Ads: lê a planilha do rastreador e envia as vendas como
-// conversões. Cole em Google Ads → Ferramentas → Ações em massa → Scripts e
-// programe para rodar a cada hora. O painel (Configurações) mostra este mesmo
-// código já com o seu link.
+// conversões. Cole em Google Ads → Ferramentas → Ações em massa → Scripts,
+// clique em Autorizar e deixe a Frequência em "Por hora". O painel
+// (Configurações) mostra este mesmo código já com o seu link.
 var PLANILHA = '__PLANILHA__';
 
 function main() {

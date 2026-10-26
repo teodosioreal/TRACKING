@@ -533,6 +533,34 @@ const LIVE = '<div class="live" id="pb-live"><span class="pulse"></span><div><b>
 const markTest = (r) =>
   `<form method="post" action="/vendas/${r.id}/excluir" data-confirm="Excluir este registro? Ele sai dos números e da planilha do Google Ads. Não tem volta."><button type="submit" class="mini danger">Excluir</button></form>`
 
+const where = (t) => `<span class="where">${t}</span>`
+
+// Passo a passo da ação de conversão no Google Ads atual (menus em português).
+function conversionSteps(name) {
+  return `<ol>
+<li>No Google Ads: ${where('Metas → Conversões → Criar ação de conversão')}.</li>
+<li>Marque <b>só “Conversões off-line”</b>. A opção <b>“Conversões de chamadas telefônicas” vem marcada: desmarque</b>.</li>
+<li>Clique em ${where('Editar fontes de dados')} → <b>“Pular esta etapa e configurar uma fonte de dados mais tarde”</b>.</li>
+<li>Marque a declaração <b>“Dados do cliente”</b> → <b>Concluído</b> → <b>Salvar e continuar</b>.</li>
+<li>Escolha a categoria <b>Compra</b> e clique em <b>Editar configurações</b>:
+<ul><li><b>Nome:</b> ${name ? `<b>${esc(name)}</b>, ` : ''}exatamente igual ao do rastreador;</li>
+<li><b>Valor:</b> “Usar valores diferentes para cada conversão” e <b>troque a moeda para Dólar americano (USD)</b>, que vem como Real (BRL);</li>
+<li>o resto pode ficar no padrão. Salve.</li></ul></li>
+</ol>
+<p class="muted"><b>Conta dentro de uma MCC?</b> Na MCC, em ${where('Metas → Conversões → Configurações → Acompanhamento de conversões entre contas')}, a coluna <b>“Conta de conversão”</b> da subconta tem que estar <b>“Cliente”</b>. Senão a conversão e o script ficam presos na MCC, e não na conta de anúncios.</p>`
+}
+
+// Passo a passo do script no Google Ads.
+function scriptSteps() {
+  return `<ol>
+<li>Na <b>conta de anúncios</b> (não na MCC): ${where('Ferramentas → Ações em massa → Scripts → +')}.</li>
+<li>Apague o que vier escrito e cole o script (botão abaixo).</li>
+<li>Clique em <b>Autorizar</b> e aprove com a sua conta Google. <b>Esse clique tem que ser seu</b> (o Google não aceita automação nessa tela). Se a janela não abrir, é o <b>bloqueador de pop-up</b>: libere pop-ups para <code>ads.google.com</code> e clique de novo. Se você executar sem autorizar, aparece <i>“Falha devido a erros de autenticação”</i>.</li>
+<li>Clique em <b>Executar</b> (não em “Visualizar”) e depois em <b>Salvar</b>.</li>
+<li>Na lista de scripts, na coluna <b>Frequência</b>, escolha <b>Por hora</b>.</li>
+</ol>`
+}
+
 export const PRODUCT_TABS = {
   status: 'Status',
   script: '1. Script',
@@ -700,8 +728,7 @@ ${pbRows}
 <form method="post" action="/produtos/${pid}/simular-venda" class="actions"><button type="submit">Simular venda de teste</button></form>
 ${st.lastSale && st.lastSale.status === 'test' ? `<p class="ok">✓ Venda de teste ligada a este produto ${ago(st.lastSale.created_at)}.</p>` : ''}</div></section>`
   } else if (tab === 'google') {
-    const where = (t) => `<span class="where">${t}</span>`
-    body = `<div class="flash info">No Google Ads você faz só 2 coisas: <b>criar a conversão</b> deste produto e <b>colar o script</b> (uma vez por conta). A plataforma coloca cada venda na planilha e o script envia para o Google a cada hora.</div>
+    body = `<div class="flash info">No Google Ads você faz só 2 coisas: <b>criar a conversão</b> deste produto e <b>colar o script</b> (uma vez por conta). A plataforma coloca cada venda na planilha e o script envia para o Google de hora em hora.</div>
 
 <section><h3>1. Crie a conversão deste produto</h3><div class="box">
 <form class="conv" method="post" action="/produtos/${pid}/conversao">
@@ -710,18 +737,12 @@ ${st.lastSale && st.lastSale.status === 'test' ? `<p class="ok">✓ Venda de tes
 <button type="submit">Salvar nome</button><button type="button" class="primary" data-copy-input="conv-input">Copiar nome</button></div>
 ${st.lastRealSale ? `<div class="hint warn">Este produto já tem vendas: trocar o nome depois que o Google já importou faz contar em dobro. Troque só para corrigir.</div>` : ''}
 </form>
-<p>No Google Ads: ${where('Metas → Conversões → + Nova ação de conversão → Importar → Conversões de cliques')}</p>
-<p>Use <b>exatamente o nome acima</b>, categoria <b>Compra</b> e valor <b>“usar valores diferentes para cada conversão”</b>. O resto pode ficar no padrão.</p>
+${conversionSteps(product.conversion_name)}
 <a class="btn" href="https://ads.google.com/aw/conversions" target="_blank" rel="noopener">Abrir Conversões no Google Ads ↗</a>
 </div></section>
 
 <section><h3>2. Cole o script no Google Ads <span class="right">uma vez por conta, vale para todos os produtos</span></h3><div class="box">
-<ol>
-<li>No Google Ads: ${where('Ferramentas → Ações em massa → Scripts → + (Novo script)')}</li>
-<li>Apague o que vier escrito, cole o script abaixo e clique em <b>Autorizar</b>.</li>
-<li>Clique em <b>Executar</b> uma vez para testar e depois em <b>Salvar</b>.</li>
-<li>Na lista de scripts, em <b>Frequência</b>, escolha <b>A cada hora</b>.</li>
-</ol>
+${scriptSteps()}
 ${copyHidden('ads-script', adsScript, 'Copiar script')}
 <p>${st.csvFetch ? `<span class="ok">✓ O Google Ads leu a planilha ${ago(st.csvFetch.at)}.</span>` : '<span class="warn">O script ainda não leu a planilha.</span> <span class="muted">Depois de colar, clique em Executar e recarregue esta página.</span>'}
 <span class="muted">· ${st.salesForGoogle} venda(s) deste produto com gclid.</span></p>
@@ -838,7 +859,8 @@ ${LIVE}
 </div></section>
 
 <section><h3>Google Ads — script (um por conta)</h3><div class="box">
-<p>Cole em ${'<span class="where">Google Ads → Ferramentas → Ações em massa → Scripts → +</span>'}, clique em <b>Autorizar</b>, <b>Executar</b> e <b>Salvar</b>, e deixe a frequência <b>A cada hora</b>. Ele envia as vendas de todos os produtos, cada uma com o nome de conversão do seu produto.</p>
+<p>Um script por conta de anúncios envia as vendas de todos os produtos, cada uma com o nome de conversão do seu produto.</p>
+${scriptSteps()}
 ${copyHidden('ads-script', adsScript, 'Copiar script')}
 <p>${csvFetch ? `<span class="ok">✓ Lida pela última vez ${ago(csvFetch.at)}.</span>` : '<span class="muted">Ainda não foi lida pelo Google Ads.</span>'} <span class="muted">Vendas aprovadas com gclid, em ${esc(currency)}. O Google ignora vendas que já importou.</span></p>
 </div></section>

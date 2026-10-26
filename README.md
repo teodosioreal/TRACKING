@@ -12,7 +12,7 @@ Anúncio Google ──► Página de review (?gclid=...)
                      ▼
             /google-ads.csv lista a venda com o gclid
                      ▼
-            Google Ads importa a planilha sozinho (programação HTTPS)
+            Script do Google Ads (Por hora) lê a planilha e envia as vendas
 ```
 
 Node puro + SQLite embutido. **Zero dependências** (não precisa de `npm install`).
@@ -114,9 +114,12 @@ Detalhes:
 
 - O **postback da BuyGoods é um só** para todos os produtos
   (Configurações). A venda cai no produto certo pela visita que a gerou.
-- Cada produto tem sua **planilha** (`/google-ads.csv?key=...&produto=ID`)
-  com o seu nome de conversão. Se todos os produtos rodam na mesma conta do
-  Google Ads, dá para usar a planilha geral (`/google-ads.csv?key=...`).
+- **Google Ads**: em cada conta de anúncios, crie a ação de conversão de cada
+  produto (Conversões off-line, categoria Compra, moeda USD) e cole o script
+  de Configurações (`deploy/google-ads-script.js`, com Frequência “Por hora”).
+  O passo a passo atualizado está na aba **3. Google Ads** do produto. O
+  script lê `/google-ads.csv?key=...&dias=3` (todas as vendas, cada uma com o
+  nome de conversão do seu produto).
 - Vendas aprovadas dos últimos `EXPORT_DAYS` dias, com gclid. O Google
   ignora o que já importou. Reembolsos saem da planilha.
 
