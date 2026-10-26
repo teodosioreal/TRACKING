@@ -189,3 +189,15 @@ test('parâmetro do ID da visita: padrão da plataforma ou personalizado', async
   const id = createProduct(db, cb)
   assert.equal(trackingParam(getProduct(db, id)), 'tid')
 })
+
+test('verificação: script funciona no navegador mas visitante recebe cópia do cache', async () => {
+  const product = { id: 'pabc12345', review_url: 'https://s.com/r', last_ping_at: '2026-10-26T10:00:00Z' }
+  const headers = new Headers({ 'x-litespeed-cache': 'hit' })
+  const page = (body) => async () => ({ ok: true, status: 200, headers, text: async () => body })
+  const r = await checkPage(product, page('<title>NerveCalm Review</title><a href="https://x.com/?aff_id=1">b</a>'))
+  assert.match(r, /funcionou no seu navegador/)
+  assert.match(r, /LiteSpeed Cache/)
+  assert.match(r, /sem o script/)
+  const gtm = await checkPage(product, async () => ({ ok: true, status: 200, headers: new Headers(), text: async () => '<script src="https://www.googletagmanager.com/gtm.js?id=GTM-ABC123"></script>' }))
+  assert.match(gtm, /Google Tag Manager/)
+})

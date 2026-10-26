@@ -34,10 +34,25 @@ export async function checkPage(product, fetchImpl = fetch, trackerHost = '') {
   const hrefs = body.match(/href\s*=\s*["'][^"']*["']/gi) || []
   const links = hrefs.filter((h) => /buygoods|[?&](?:amp;)?aff_id=/i.test(h) || (affHost && h.toLowerCase().includes(affHost))).length
   const challenge = /cf-browser-verification|challenge-platform|just a moment\.\.\.|captcha/i.test(body)
+  const gtm = /googletagmanager\.com\/gtm\.js|GTM-[A-Z0-9]{4,}/.test(body)
+  const h = (n) => (res.headers?.get ? res.headers.get(n) : null)
+  const cacheHit = [
+    ['x-litespeed-cache', 'LiteSpeed Cache'],
+    ['cf-cache-status', 'Cloudflare'],
+    ['x-cache', 'cache do servidor'],
+    ['x-proxy-cache', 'cache do servidor'],
+    ['x-wp-super-cache', 'WP Super Cache'],
+    ['x-rocket-cache', 'WP Rocket'],
+  ]
+    .filter(([n]) => /hit/i.test(h(n) || ''))
+    .map(([, label]) => label)
+  const rocket = /This website is like a Rocket|wp-rocket/i.test(body) ? 'WP Rocket' : null
+  const workedInBrowser = Boolean(product.last_ping_at)
 
   const lines = [
     `<span class="muted">O servidor abriu <b>${esc(finalUrl)}</b> · resposta ${res.status} · ${kb} KB · título: “${esc(title)}”</span>`,
   ]
+  if (cacheHit.length) lines.push(`<span class="muted">Página servida pelo cache: ${esc([...new Set(cacheHit)].join(', '))}.</span>`)
   if (!res.ok) lines.push(`<span class="bad">✗ A página respondeu com erro ${res.status}.</span>`)
   if (challenge)
     lines.push(
@@ -53,6 +68,16 @@ export async function checkPage(product, fetchImpl = fetch, trackerHost = '') {
     lines.push('<span class="bad">✗ A página tem o script de OUTRO produto. Troque pelo script desta página.</span>')
   else if (oldScript)
     lines.push('<span class="bad">✗ A página tem o script antigo (sem ?p=). Troque pelo script desta página.</span>')
+  else if (workedInBrowser)
+    lines.push(
+      `<span class="warn">! O script funcionou no seu navegador (Testar instalação), mas não está na versão que um visitante anônimo recebe.</span> <span class="muted">${
+        cacheHit.length || rocket
+          ? `Esta página veio do cache (<b>${esc([...new Set([...cacheHit, rocket].filter(Boolean))].join(', '))}</b>): visitantes estão recebendo uma cópia antiga, <b>sem o script</b>. Limpe o cache do site (e da Cloudflare, se usar) e verifique de novo.`
+          : gtm
+            ? 'A página usa Google Tag Manager: se você colocou o script por lá, ele não aparece no código e isso é normal. Confirme com o Testar instalação numa janela anônima.'
+            : 'O mais comum é cache: logado no WordPress você vê a página nova, e o visitante recebe uma cópia antiga sem o script. Limpe o cache do site (e da Cloudflare, se usar), verifique de novo e faça o Testar instalação numa janela anônima.'
+      }</span>`,
+    )
   else
     lines.push(
       `<span class="bad">✗ O script não está no código que o servidor recebeu.</span> <span class="muted">Causas comuns: a página não foi publicada/atualizada depois de colar; cache do site (limpe o cache do WordPress/LiteSpeed/Cloudflare); o endereço cadastrado não é a página onde você colou; ou a página usa cloaker/proteção e mostra outra versão para robôs. Se a página é montada por JavaScript, vale o resultado do Testar instalação.</span>`,
