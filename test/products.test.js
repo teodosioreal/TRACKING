@@ -148,3 +148,13 @@ test('trocar o nome da conversão muda a planilha do produto', async () => {
   assert.ok(conversionNameError('x'.repeat(101)))
   assert.equal(conversionNameError('Compra'), null)
 })
+
+test('versão é lida do git; sem git não quebra', async () => {
+  const { readVersion } = await import('../src/version.js')
+  const v = readVersion(new URL('..', import.meta.url).pathname)
+  assert.match(v.hash, /^[0-9a-f]{7,}$/)
+  assert.ok(v.date && v.message && v.startedAt)
+  const none = readVersion(tmpdir())
+  assert.equal(none.hash, null)
+  assert.ok(none.startedAt)
+})

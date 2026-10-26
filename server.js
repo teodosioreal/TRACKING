@@ -26,7 +26,9 @@ import {
   productPage,
   checklistHtml,
   settingsPage,
+  setAppInfo,
 } from './src/views.js'
+import { readVersion } from './src/version.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 if (existsSync(join(here, '.env'))) process.loadEnvFile(join(here, '.env'))
@@ -50,6 +52,8 @@ if (!cfg.adminPassword || !cfg.secretKey) {
 }
 
 const db = openDb(cfg.dbPath)
+const version = readVersion(here)
+setAppInfo({ version, tz: cfg.tz })
 const trackerJs = readFileSync(join(here, 'public', 't.js'), 'utf8')
 
 // Nome usado nas vendas cujas visitas não têm produto. Editável em Configurações;
@@ -398,5 +402,5 @@ createServer((req, res) => {
     if (!res.headersSent) send(res, 500, 'erro interno')
   })
 }).listen(cfg.port, () => {
-  console.log(`Tracking rodando em http://localhost:${cfg.port}`)
+  console.log(`Tracking rodando em http://localhost:${cfg.port} (versão ${version.hash || 'desconhecida'})`)
 })

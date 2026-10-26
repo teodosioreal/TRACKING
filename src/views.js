@@ -26,7 +26,7 @@ const CSS = `
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
 a{color:var(--accent)}
 header{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:1px solid var(--line);background:var(--card)}
-header h1{font-size:17px;margin:0}nav a{color:var(--muted);text-decoration:none;margin-left:16px}nav a.on{color:var(--text);font-weight:600}
+header h1{font-size:17px;margin:0}.brand{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}.ver{font-size:12px;color:var(--muted);text-decoration:none}.ver:hover{text-decoration:underline}nav a{color:var(--muted);text-decoration:none;margin-left:16px}nav a.on{color:var(--text);font-weight:600}
 main{max-width:1200px;margin:0 auto;padding:20px 16px 60px}
 h2.title{font-size:20px;margin:0 0 4px}.sub{color:var(--muted);margin:0 0 18px}
 .bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;margin-bottom:16px}
@@ -72,11 +72,24 @@ navigator.clipboard.writeText(document.getElementById(b.dataset.copyInput).value
 document.addEventListener('submit',e=>{const m=e.target.dataset.confirm;if(m&&!confirm(m))e.preventDefault()})
 `
 
+// Versão em execução, definida pelo servidor ao iniciar.
+let app = { version: { hash: null, date: null, message: null, startedAt: null }, tz: 'America/Sao_Paulo' }
+export function setAppInfo(info) {
+  app = info
+}
+
+function versionLabel() {
+  const v = app.version
+  if (!v.hash) return 'versão desconhecida'
+  const d = new Date(v.date).toLocaleString('pt-BR', { timeZone: app.tz, day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+  return `Atualizado ${d} · ${v.hash}`
+}
+
 function layout(title, active, body, extraJs = '') {
   const link = (href, key, label) => `<a href="${href}" class="${active === key ? 'on' : ''}">${label}</a>`
   return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(title)}</title><style>${CSS}</style></head><body>
-<header><h1>Tracking</h1><nav>${link('/', 'painel', 'Painel')}${link('/produtos', 'produtos', 'Produtos')}${link('/configuracoes', 'config', 'Configurações')}</nav></header>
+<header><div class="brand"><h1>Tracking</h1><a class="ver" href="/configuracoes#versao" title="${esc(app.version.message || '')}">${esc(versionLabel())}</a></div><nav>${link('/', 'painel', 'Painel')}${link('/produtos', 'produtos', 'Produtos')}${link('/configuracoes', 'config', 'Configurações')}</nav></header>
 <main>${body}</main>
 <script>${SCRIPT}${extraJs}</script>
 </body></html>`
@@ -416,6 +429,16 @@ ${copy('postback', postback)}
 ${copy('csv', csv)}
 <p>${csvFetch ? `<span class="ok">✓ Lida pela última vez ${ago(csvFetch.at)}.</span>` : '<span class="muted">Ainda não foi lida pelo Google Ads.</span>'}</p>
 <p class="muted">Vendas aprovadas dos últimos ${days} dias, com gclid, em ${esc(currency)}. O Google ignora vendas que já importou.</p>
+</div></section>
+
+<section id="versao"><h3>Versão no ar</h3><div class="box">
+${
+  app.version.hash
+    ? `<p><b>${esc(app.version.message)}</b></p>
+<p class="muted">Commit <code>${esc(app.version.hash)}</code> · feito em ${esc(when(app.version.date, tz))} · servidor reiniciado em ${esc(when(app.version.startedAt, tz))}</p>`
+    : `<p class="muted">Não consegui ler a versão (pasta sem git). Servidor iniciado em ${esc(when(app.version.startedAt, tz))}.</p>`
+}
+<p class="muted">A VPS confere o GitHub a cada minuto. Depois de uma atualização, esta linha e a do topo mudam sozinhas.</p>
 </div></section>
 
 <section><h3>Nome padrão da conversão</h3><div class="box">
