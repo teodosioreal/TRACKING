@@ -22,6 +22,7 @@ import {
   productStatus,
   affiliateHost,
   affiliateMatch,
+  affiliatePath,
   trackingParam,
   saveImage,
   getImage,
@@ -241,6 +242,7 @@ async function handlePublic(req, res, url) {
       .replace('__PRODUCT__', product ? product.id : '')
       .replace('__DOMAINS__', affiliateHost(product))
       .replace('__PARAM__', product ? trackingParam(product) : '')
+      .replace('__PATH__', product ? affiliatePath(product).replace(/[^a-z0-9/_.~%-]/g, '') : '')
       .replace('__MATCH__', JSON.stringify(affiliateMatch(product)).replace(/</g, '\\u003c'))
     send(res, 200, js, 'application/javascript; charset=utf-8', { ...CORS, 'Cache-Control': 'public, max-age=300' })
     return true
@@ -527,6 +529,16 @@ async function handleAdmin(req, res, url) {
       const body = key
         ? { pingAt: ping?.last_at || null, links: ping?.links ?? null, https: getHealth() }
         : { pingAt: product.last_ping_at, links: product.last_ping_links, https: getHealth() }
+      // Último clique para a oferta deste produto (inclusive de teste), para o
+      // passo 2 do Testar instalação.
+      const click = db
+        .prepare(
+          `SELECT COALESCE(last_outbound_at, outbound_at) AS at FROM clicks
+            WHERE product_id = ? AND outbound_at IS NOT NULL ORDER BY at DESC LIMIT 1`,
+        )
+        .get(product.id)
+      body.clickAt = click?.at || null
+      body.clickParam = trackingParam(product)
       return send(res, 200, JSON.stringify(body), 'application/json; charset=utf-8')
     }
 

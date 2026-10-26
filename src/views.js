@@ -405,7 +405,7 @@ export function dashboardPage(d, { period, tz, currency, products, productId, se
     'painel',
     `${noProducts}
 <div class="page-head"><div><h2 class="title">Visão geral</h2>
-<p class="sub">${esc(PERIODS[period])} · ${current ? esc(current.name) : 'todos os produtos'} · ${trafficNote(traffic)}</p></div>
+<p class="sub">${esc(PERIODS[period])} · ${current ? esc(current.name) : 'todos os produtos'} · ${trafficNote(traffic)} · <span title="Visitas abertas pelo Testar instalação (e as seguintes no mesmo navegador) ficam como teste e não contam. Veja em Visitantes.">visitas de teste não contam</span></p></div>
 <div class="filters">${trafficSeg(traffic, (k) => qs({ trafego: k }))}<div class="seg">${periods}</div>
 <form method="get" action="/"><input type="hidden" name="periodo" value="${esc(period)}">${tab !== 'campanhas' ? `<input type="hidden" name="aba" value="${esc(tab)}">` : ''}
 <select name="produto" onchange="this.form.submit()" aria-label="Produto">${options}</select></form></div></div>
@@ -879,8 +879,15 @@ const out=document.getElementById('test-status'),t0=Date.now();let timer;
 const tick=async()=>{const secs=Math.round((Date.now()-t0)/1000);
 try{const r=await(await fetch('/produtos/'+pid+'/sinal?pagina='+encodeURIComponent(page))).json();
 if(r.pingAt&&new Date(r.pingAt).getTime()>=t0-3000){clearInterval(timer);
-out.innerHTML=r.links>0?'<span class="ok"><b>✓ Funcionou!</b> O script está rodando na página e marcou '+r.links+' link(s) de afiliado.</span>'
-:'<span class="bad"><b>! O script está rodando, mas não achou o link de afiliado.</b> Cadastre o link de afiliado na aba Configurações ou coloque data-rastrear no link de compra.</span>';return}
+if(!(r.links>0)){out.innerHTML='<span class="bad"><b>! O script está rodando, mas não achou o link de afiliado.</b> Veja as sugestões em “Páginas onde o script já deu sinal” (recarregue esta página) ou cadastre o link de afiliado em Configurações.</span>';return}
+// Passo 2: clique no botão de compra na aba aberta e confirme que o clique chegou.
+const step1='<span class="ok"><b>✓ 1. Script rodando</b>: marcou '+r.links+' link(s) de afiliado.</span><br>';const t1=Date.now();
+const wait=async()=>{const s2=Math.round((Date.now()-t1)/1000);
+try{const c=await(await fetch('/produtos/'+pid+'/sinal?pagina='+encodeURIComponent(page))).json();
+if(c.clickAt&&new Date(c.clickAt).getTime()>=t0-3000){clearInterval(timer);out.innerHTML=step1+'<span class="ok"><b>✓ 2. Clique para a oferta registrado</b> (o link saiu com <code>'+c.clickParam+'</code> = ID da visita). A taxa de passagem e a ligação da venda estão funcionando.</span><br><span class="muted">Este clique é de teste: aparece em Visitantes (origem “Teste”), mas não entra nos números.</span>';return}}catch(e){}
+if(s2>=90){clearInterval(timer);out.innerHTML=step1+'<span class="bad"><b>✗ 2. Nenhum clique para a oferta em 90 segundos.</b></span> <span class="muted">Se você clicou no botão de compra e não registrou: o botão não é o link reconhecido (veja “Páginas onde o script já deu sinal”), é um link encurtado/redirecionador sem <code>data-rastrear</code>, ou um bloqueador de anúncios barrou o aviso. Teste numa aba anônima.</span>';return}
+out.innerHTML=step1+'<span class="muted"><b>2. Agora clique no botão de compra</b> na aba que abriu… aguardando '+s2+'s</span>'};
+clearInterval(timer);wait();timer=setInterval(wait,2000);return}
 if(secs>=30){clearInterval(timer);out.innerHTML='<span class="bad"><b>✗ Nenhum sinal da página em 30 segundos.</b></span><br><span class="muted">Causas mais comuns, nesta ordem:</span><ol class="muted" style="margin:4px 0 0">'
 +(r.https&&!r.https.ok?'<li class="bad"><b>HTTPS do rastreador com problema</b>: '+r.https.reason+'. Isso bloqueia o script em qualquer página. Resolva primeiro (veja o aviso no topo).</li>':'')
 +'<li>A página não foi <b>publicada</b> depois de colar o código, ou o site está mostrando uma versão em <b>cache</b> (limpe o cache do WordPress/LiteSpeed/Cloudflare).</li>'

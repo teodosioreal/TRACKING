@@ -32,7 +32,17 @@ export async function checkPage(product, fetchImpl = fetch, trackerHost = '') {
   const otherScript = !hasScript && /t\.js\?p=p[a-z0-9]{8}/.test(body)
   const oldScript = !hasScript && trackerHost && body.includes(`${trackerHost}/t.js"`)
   const hrefs = body.match(/href\s*=\s*["'][^"']*["']/gi) || []
-  const links = hrefs.filter((h) => /buygoods|[?&](?:amp;)?aff_id=/i.test(h) || (affHost && h.toLowerCase().includes(affHost))).length
+  // Link de afiliado no próprio site (/go/produto): conta só esse caminho.
+  let affPath = ''
+  try {
+    const au = new URL(product.affiliate_url)
+    if (au.hostname.replace(/^www\./, '') === new URL(product.review_url).hostname.replace(/^www\./, '')) affPath = au.pathname.replace(/\/+$/, '').toLowerCase()
+  } catch {}
+  const links = hrefs.filter((h) =>
+    affPath
+      ? h.toLowerCase().includes(affPath)
+      : /buygoods|[?&](?:amp;)?aff_id=/i.test(h) || (affHost && h.toLowerCase().includes(affHost)),
+  ).length
   const challenge = /cf-browser-verification|challenge-platform|just a moment\.\.\.|captcha/i.test(body)
   const gtm = /googletagmanager\.com\/gtm\.js|GTM-[A-Z0-9]{4,}/.test(body)
   const h = (n) => (res.headers?.get ? res.headers.get(n) : null)

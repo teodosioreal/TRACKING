@@ -175,6 +175,17 @@ export function affiliateHost(product) {
   }
 }
 
+// Caminho do link de afiliado (ex.: "/go/arialief"). Usado quando o link é um
+// redirecionador no próprio site (Pretty Links, ThirstyAffiliates...), para o
+// script não marcar todos os links internos do site.
+export function affiliatePath(product) {
+  try {
+    return product?.affiliate_url ? new URL(product.affiliate_url).pathname.replace(/\/+$/, '').toLowerCase() : ''
+  } catch {
+    return ''
+  }
+}
+
 // Domínios de rede (o mesmo domínio serve vários produtos): o produto é
 // identificado pelos parâmetros do link (ex.: oferta), não só pelo domínio.
 const SHARED_HOSTS = /(^|\.)(buygoods\.com|clickbank\.net|digistore24\.com|hotmart\.com)$/

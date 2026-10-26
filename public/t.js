@@ -14,6 +14,10 @@
   // Em domínio de rede (buygoods.com, clickbank.net...), parâmetros que o
   // link precisa ter para ser deste produto. Ex.: {"o":"456"}.
   var MATCH = __MATCH__
+  // Caminho do link de afiliado (só vale quando o link é um redirecionador no
+  // próprio site, ex.: /go/produto).
+  var AFF_PATH = '__PATH__'
+  var HERE = location.hostname.replace(/^www\./, '').toLowerCase()
   var KEY = 'rt_visita' + (PID ? '_' + PID : '')
   var TTL = 90 * 864e5
   var script = document.currentScript || {}
@@ -80,7 +84,11 @@
         var d = domains[i]
         if (!d) continue
         // "buygoods" (sem ponto) vale como trecho; domínio completo só ele e subdomínios.
-        if (d.indexOf('.') === -1 ? host.indexOf(d) !== -1 : host === d || host.slice(-d.length - 1) === '.' + d) return sameOffer(u)
+        if (d.indexOf('.') === -1 ? host.indexOf(d) !== -1 : host === d || host.slice(-d.length - 1) === '.' + d) {
+          // Link de afiliado no próprio site (/go/produto): só esse caminho, não o site todo.
+          if (host.replace(/^www\./, '') === HERE) return Boolean(AFF_PATH) && u.pathname.toLowerCase().indexOf(AFF_PATH) === 0
+          return sameOffer(u)
+        }
       }
       return !strict && /[?&]aff_id=/i.test(u.search)
     } catch (e) {
@@ -168,6 +176,8 @@
   // Quando nada foi reconhecido: links externos da página, para o painel
   // sugerir qual é o link de afiliado.
   var IGNORE = /(^|\.)(facebook|fb|instagram|twitter|x|youtube|youtu|google|pinterest|tiktok|linkedin|wa|whatsapp|t)\.(com|me|be)$/
+  // Redirecionadores de afiliado no próprio site (Pretty Links, ThirstyAffiliates...).
+  var REDIRECT = /^\/(go|out|recommends?|visit|links?|refer|r|buy|get|order|offer|try|deal)(\/|$)/i
   function candidates() {
     var seen = {}
     var out = []
@@ -176,7 +186,8 @@
       var href = els[i].tagName === 'A' ? els[i].href : urlOf(els[i])
       try {
         var u = new URL(href, location.href)
-        if (!/^https?:$/.test(u.protocol) || u.hostname === location.hostname) continue
+        if (!/^https?:$/.test(u.protocol)) continue
+        if (u.hostname === location.hostname && !REDIRECT.test(u.pathname)) continue
         if (IGNORE.test(u.hostname.replace(/^www\./, ''))) continue
         var key = u.origin + u.pathname
         if (!seen[key]) {
@@ -208,6 +219,18 @@
       if (navigator.sendBeacon) navigator.sendBeacon(BASE + '/o', cid)
       if (el.getAttribute('target') === '_blank' || /window\.open/.test(el.getAttribute('onclick') || '')) window.open(t, '_blank')
       else location.href = t
+    },
+    true,
+  )
+
+  // Envio de formulário de compra: garante o ID e registra o clique.
+  document.addEventListener(
+    'submit',
+    function (e) {
+      var f = e.target
+      if (!f || !f.action || !(marked(f) || isTrackedUrl(f.action))) return
+      tagAll()
+      if (navigator.sendBeacon) navigator.sendBeacon(BASE + '/o', cid)
     },
     true,
   )

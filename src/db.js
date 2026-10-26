@@ -105,6 +105,7 @@ export function openDb(path) {
     const upd = db.prepare('UPDATE clicks SET source = ? WHERE id = ?')
     for (const r of db.prepare('SELECT * FROM clicks').all()) upd.run(classifySource(r), r.id)
   }
+  if (!cols.has('last_outbound_at')) db.exec('ALTER TABLE clicks ADD COLUMN last_outbound_at TEXT')
   if (!cols.has('page')) {
     // Página de entrada sem parâmetros (para a taxa de passagem por página).
     db.exec('ALTER TABLE clicks ADD COLUMN page TEXT')

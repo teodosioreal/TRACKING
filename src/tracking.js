@@ -79,9 +79,10 @@ export function recordOutbound(db, cid, now = new Date()) {
   if (!isValidCid(cid)) return false
   const res = db
     .prepare(
-      `UPDATE clicks SET outbound_at = COALESCE(outbound_at, ?), outbound_count = outbound_count + 1 WHERE id = ?`,
+      `UPDATE clicks SET outbound_at = COALESCE(outbound_at, ?), last_outbound_at = ?, outbound_count = outbound_count + 1
+        WHERE id = ?`,
     )
-    .run(now.toISOString(), cid)
+    .run(now.toISOString(), now.toISOString(), cid)
   return res.changes > 0
 }
 

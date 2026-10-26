@@ -263,3 +263,16 @@ test('link de rede (buygoods.com) identifica o produto pelos parâmetros da ofer
   assert.deepEqual(affiliateMatch({ affiliate_url: 'https://getnervecalm.com/dtc/?aff_id=1' }), {}) // domínio próprio: basta o domínio
   assert.deepEqual(affiliateMatch({}), {})
 })
+
+test('link de afiliado no próprio site (/go/produto) usa o caminho', async () => {
+  const { affiliatePath } = await import('../src/products.js')
+  assert.equal(affiliatePath({ affiliate_url: 'https://meusite.com/go/NerVive/' }), '/go/nervive')
+  assert.equal(affiliatePath({}), '')
+  const { recordOutbound } = await import('../src/tracking.js')
+  const db = openDb(':memory:')
+  recordClick(db, { cid: 'visita01', url: 'https://s.com/r' }, new Date('2026-10-26T10:00:00Z'))
+  recordOutbound(db, 'visita01', new Date('2026-10-26T10:01:00Z'))
+  recordOutbound(db, 'visita01', new Date('2026-10-26T10:05:00Z'))
+  const r = db.prepare("SELECT outbound_at, last_outbound_at, outbound_count FROM clicks WHERE id='visita01'").get()
+  assert.deepEqual({ ...r }, { outbound_at: '2026-10-26T10:01:00.000Z', last_outbound_at: '2026-10-26T10:05:00.000Z', outbound_count: 2 })
+})
