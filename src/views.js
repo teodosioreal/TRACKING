@@ -83,7 +83,7 @@ button.mini,.btn.mini{padding:2px 9px;font-size:11.5px}td form{margin:0;display:
 .check{list-style:none;margin:0;padding:0}.check li{display:flex;gap:12px;padding:11px 16px;border-bottom:1px solid var(--line)}.check li:last-child{border-bottom:0}
 .check .ic{flex:none;width:24px;height:24px;border-radius:999px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px}
 .check .s-ok .ic{background:var(--okbg);color:var(--ok)}.check .s-wait .ic{background:var(--soft);color:var(--muted);border:1px solid var(--line)}.check .s-bad .ic{background:var(--badbg);color:var(--bad)}.check .s-warn .ic{background:var(--warnbg);color:var(--warn)}
-.check li>div>b{display:block}.check span{color:var(--muted);font-size:12.5px;word-break:break-word}
+.check li>div>b{display:block}.check li>div>span{display:block;margin-top:2px}.check span{color:var(--muted);font-size:12.5px;word-break:break-word}
 .form{padding:16px;display:grid;gap:14px;max-width:680px}.form label b{display:block;margin-bottom:4px}.form .hint{color:var(--muted);font-size:12px;margin-top:4px}.form .err{color:var(--bad);font-size:12px;margin-top:4px}
 .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:12px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;text-decoration:none;color:var(--text);display:block;box-shadow:var(--shadow)}
@@ -209,6 +209,7 @@ const ICONS = {
   visitantes: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="9" cy="8" r="4"/><path d="M2 21c0-4 3-7 7-7s7 3 7 7"/><path d="M17 4a4 4 0 0 1 0 8M22 21c0-3-2-5.5-5-6.5"/></svg>',
   vendas: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2v20M17 6H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>',
   produtos: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="M3 8l9 5 9-5M12 13v8"/></svg>',
+  diagnostico: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>',
   config: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1"/></svg>',
 }
 
@@ -218,7 +219,7 @@ function layout(title, active, body, extraJs = '') {
 <title>${esc(title)}</title><style>${CSS}</style></head><body>
 <header class="top"><div class="top-in">
 <a class="logo" href="/"><span class="mk">T</span>Tracking</a>
-<nav class="mainnav">${link('/', 'painel', 'Visão geral')}${link('/visitantes', 'visitantes', 'Visitantes')}${link('/vendas', 'vendas', 'Vendas')}${link('/produtos', 'produtos', 'Produtos')}${link('/configuracoes', 'config', 'Configurações')}</nav>
+<nav class="mainnav">${link('/', 'painel', 'Visão geral')}${link('/visitantes', 'visitantes', 'Visitantes')}${link('/vendas', 'vendas', 'Vendas')}${link('/produtos', 'produtos', 'Produtos')}${link('/diagnostico', 'diagnostico', 'Diagnóstico')}${link('/configuracoes', 'config', 'Configurações')}</nav>
 <a class="ver" href="/configuracoes#versao" title="${esc(app.version.message || '')}">${versionLabel()}</a>
 <form method="post" action="/sair" style="margin:0"><button type="submit" class="logout">Sair</button></form>
 </div></header>
@@ -1095,4 +1096,40 @@ ${error ? `<div class="flash bad" style="margin:0">${esc(error)}</div>` : ''}
 <label><b>Senha</b><input type="password" name="password" autocomplete="current-password" required></label>
 <button type="submit" class="primary">Entrar</button>
 </form></div></body></html>`
+}
+
+// ---------------------------------------------------------------- Diagnóstico
+
+export function diagnosticsPage(d, { resendPending, flash }) {
+  const icon = { bad: '!', warn: '!', ok: '✓', info: 'i' }
+  const state = { bad: 'bad', warn: 'warn', ok: 'ok', info: 'wait' }
+  const list = (items) =>
+    items.length
+      ? `<ul class="check">${items
+          .map(
+            (x) => `<li class="s-${state[x.level]}"><div class="ic">${icon[x.level]}</div><div><b>${esc(x.title)}</b>${x.detail ? `<span>${esc(x.detail)}</span>` : ''}${x.fix ? `<span><b style="display:inline">Como resolver:</b> ${esc(x.fix)}</span>` : ''}</div></li>`,
+          )
+          .join('')}</ul>`
+      : '<div class="empty">Nada encontrado.</div>'
+  const products = d.products
+    .map(
+      (p) => `<section><h3>${esc(p.product.name)} <span class="right">configuração ${p.progress.pct}%</span></h3>
+${p.missing.length ? `<div class="box" style="padding-bottom:0"><p class="muted">Etapas que faltam para 100%: <b>${p.missing.map(esc).join(', ')}</b>. <a href="/produtos/${esc(p.product.id)}">Abrir produto →</a></p></div>` : ''}
+${list(p.items.length ? p.items : [{ level: 'ok', title: 'Nada de errado encontrado neste produto' }])}</section>`,
+    )
+    .join('')
+  return layout(
+    'Diagnóstico — Tracking',
+    'diagnostico',
+    `${flash ? '<div class="flash">Pronto: na próxima execução do script (até 1 hora), as vendas dos últimos 30 dias com gclid vão de novo para o Google Ads. O que ele já recebeu é ignorado.</div>' : ''}
+<div class="page-head"><div><h2 class="title">Diagnóstico</h2><p class="sub">Revisão automática do que impede visitas e vendas de chegarem ao Google Ads.</p></div>
+<div class="filters"><span class="tag ${d.counts.bad ? 'bad' : 'ok'}">${d.counts.bad} problema(s)</span><span class="tag ${d.counts.warn ? 'warn' : 'ok'}">${d.counts.warn} alerta(s)</span></div></div>
+<section><h3>Geral</h3>${list(d.general)}</section>
+<section><h3>Vendas dos últimos 30 dias</h3>${list(d.sales)}
+<div class="box"><form method="post" action="/diagnostico/reenviar" class="actions" data-confirm="Na próxima execução, o script manda de novo as vendas com gclid dos últimos 30 dias. Continuar?">
+<button type="submit" ${resendPending ? 'disabled' : ''}>${resendPending ? 'Reenvio agendado: aguardando o script' : 'Reenviar últimos 30 dias'}</button></form>
+<p class="muted">Use quando o script ficou parado, foi instalado depois das vendas, ou a conversão foi criada depois. O Google ignora vendas que já recebeu.</p></div></section>
+${products}
+<p class="muted">Na VPS, o mesmo relatório em texto: <code>cd /opt/tracking && npm run diagnostico</code></p>`,
+  )
 }

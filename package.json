@@ -8,6 +8,7 @@
   },
   "scripts": {
     "start": "node --disable-warning=ExperimentalWarning server.js",
-    "test": "node --disable-warning=ExperimentalWarning --test test/*.test.js"
+    "test": "node --disable-warning=ExperimentalWarning --test test/*.test.js",
+    "diagnostico": "node --disable-warning=ExperimentalWarning deploy/diagnostico.js"
   }
 }

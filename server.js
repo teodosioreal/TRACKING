@@ -8,6 +8,7 @@ import { recordClick, recordOutbound, recordPing, recordPostback, exportGoogleAd
 import { dashboard, timeSeries, visitors, salesList, originBreakdown, PERIODS } from './src/stats.js'
 import { checkHttps } from './src/health.js'
 import { parseScriptReport } from './src/report.js'
+import { runDiagnostics } from './src/diagnostics.js'
 import {
   isValidPid,
   parseProductForm,
@@ -51,6 +52,7 @@ import {
   salesPage,
   ORIGIN_FILTERS,
   loginPage,
+  diagnosticsPage,
 } from './src/views.js'
 import { SOURCES } from './src/source.js'
 import { readVersion } from './src/version.js'
@@ -316,7 +318,14 @@ async function handlePublic(req, res, url) {
       return true
     }
     // "dias" encurta a janela (o script do Google Ads usa 3 para não reenviar 30 dias toda hora).
-    const dias = Number.parseInt(url.searchParams.get('dias'), 10)
+    let dias = Number.parseInt(url.searchParams.get('dias'), 10)
+    // "Reenviar últimos 30 dias" (Diagnóstico): a próxima leitura do script
+    // traz a janela inteira uma vez.
+    if (!admin && getSetting(db, 'reenviar')) {
+      dias = cfg.exportDays
+      setSetting(db, 'reenviar', false)
+      console.log('[planilha] reenvio da janela inteira entregue ao script')
+    }
     const csv = exportGoogleAdsCsv(db, {
       conversionName: defaultConversion(),
       currency: cfg.currency,
@@ -325,7 +334,10 @@ async function handlePublic(req, res, url) {
     })
     // Leitura feita pelo Google Ads (não por você no navegador logado).
     if (!admin) {
-      setSetting(db, `csv_fetch:${pid || 'all'}`, { at: new Date().toISOString(), ua: req.headers['user-agent'] || '' })
+      const at = new Date().toISOString()
+      setSetting(db, `csv_fetch:${pid || 'all'}`, { at, ua: req.headers['user-agent'] || '' })
+      // Histórico das leituras: o Diagnóstico usa para ver se cada venda foi lida.
+      setSetting(db, 'csv_fetch_log', [...(getSetting(db, 'csv_fetch_log') || []), at].slice(-500))
     }
     send(res, 200, method === 'HEAD' ? '' : csv, 'text/csv; charset=utf-8', {
       'Content-Disposition': 'inline; filename="google-ads-conversoes.csv"',
@@ -621,6 +633,16 @@ async function handleAdmin(req, res, url) {
         adsScript: adsScriptFor(baseUrl(req)),
       }),
     )
+  }
+
+  if (path === '/diagnostico' && method === 'GET') {
+    const d = runDiagnostics(db, { health: getHealth(), exportDays: cfg.exportDays, defaultConversion: defaultConversion() })
+    return html(res, diagnosticsPage(d, { resendPending: Boolean(getSetting(db, 'reenviar')), flash: url.searchParams.has('ok') }))
+  }
+
+  if (path === '/diagnostico/reenviar' && method === 'POST') {
+    setSetting(db, 'reenviar', true)
+    return redirect(res, '/diagnostico?ok=1')
   }
 
   // Endereço antigo.

@@ -81,6 +81,11 @@ systemctl enable --now tracking-update.timer tracking-backup.timer
   comprar e se comprou. Opção “Ao vivo” (atualiza a cada 10 s).
 - **Vendas**: só vendas reais (testes ficam ocultos), com origem (Pago,
   Orgânico, Sem clique...), IP e botão Excluir.
+- **Diagnóstico**: revisão automática do que impede visitas e vendas de
+  chegarem ao Google Ads (HTTPS, postback sem subid, script parado ou com
+  erro, páginas sem sinal do script ou sem link de afiliado, visitas pagas sem
+  campanha, e o motivo de cada venda que não foi para o Google). Tem o botão
+  “Reenviar últimos 30 dias”. Na VPS: `cd /opt/tracking && npm run diagnostico`.
 - **Produtos** e **Configurações**.
 
 ## Como usar
