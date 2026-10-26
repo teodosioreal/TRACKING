@@ -27,9 +27,12 @@ voltar() {
 npm test --silent >/tmp/tracking-testes.log 2>&1 || voltar "testes, veja /tmp/tracking-testes.log"
 
 systemctl restart tracking
+# Mesmo endereço/porta do .env (o timer carrega o .env como EnvironmentFile).
+ALVO="${HOST:-127.0.0.1}"
+case "$ALVO" in 0.0.0.0 | '::' | '') ALVO=127.0.0.1 ;; esac
 for i in $(seq 1 15); do
   sleep 1
-  if curl -fsS http://127.0.0.1:${PORT:-3100}/saude >/dev/null 2>&1; then
+  if curl -fsS "http://$ALVO:${PORT:-3101}/saude" >/dev/null 2>&1; then
     rm -f .versao-com-falha
     echo "OK: rodando $NOVA"
     exit 0

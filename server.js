@@ -57,7 +57,9 @@ const here = dirname(fileURLToPath(import.meta.url))
 if (existsSync(join(here, '.env'))) process.loadEnvFile(join(here, '.env'))
 
 const cfg = {
-  port: Number(process.env.PORT || 3100),
+  port: Number(process.env.PORT || 3101),
+  // Só a própria máquina: o Nginx fica na frente. Use 0.0.0.0 para abrir para fora.
+  host: process.env.HOST || '127.0.0.1',
   publicUrl: (process.env.PUBLIC_URL || '').replace(/\/+$/, ''),
   adminUser: process.env.ADMIN_USER || 'admin',
   adminPassword: process.env.ADMIN_PASSWORD || '',
@@ -612,7 +614,7 @@ createServer((req, res) => {
     console.error(err)
     if (!res.headersSent) send(res, 500, 'erro interno')
   })
-}).listen(cfg.port, () => {
+}).listen(cfg.port, cfg.host, () => {
   setTimeout(refreshHealth, 3000).unref()
-  console.log(`Tracking rodando em http://localhost:${cfg.port} (versão ${version.hash || 'desconhecida'})`)
+  console.log(`Tracking rodando em http://${cfg.host}:${cfg.port} (versão ${version.hash || 'desconhecida'})`)
 })

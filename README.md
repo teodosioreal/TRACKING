@@ -21,7 +21,9 @@ Requer **Node 22.13 ou mais novo**.
 ## Rodar na VPS (junto com o CRM, mas separado)
 
 O rastreador roda na mesma VPS do CRM, num subdomínio próprio
-(`tracking.odingdong.tech`), com pasta, serviço e porta (3100) só dele.
+(`tracking.odingdong.tech`), com pasta, serviço e porta (`PORT` no `.env`,
+padrão 3101) só dele. O servidor escuta só em `127.0.0.1` (`HOST` no `.env`):
+de fora, só o Nginx chega nele.
 Não toca em nada do CRM.
 
 **DNS:** crie um registro **A** `tracking` apontando para o IP da VPS.
@@ -49,7 +51,9 @@ ocupar as portas 80/443):
   HTTPS via certbot).
 - **Caddy:** acrescente o bloco de `deploy/Caddyfile` ao Caddyfile
   existente e rode `sudo systemctl reload caddy`.
-- Se a porta 3100 já estiver em uso, troque `PORT` no `.env` e no proxy.
+- A porta do `proxy_pass` (Nginx) ou do `reverse_proxy` (Caddy) tem que ser
+  **igual ao `PORT` do `.env`** (padrão 3101). Se 3101 estiver em uso, troque
+  nos dois lugares. Para conferir: `ss -ltnp | grep node`.
 
 Teste: `https://tracking.odingdong.tech/saude` deve responder `ok`.
 

@@ -1,5 +1,6 @@
 # Se a VPS usa Caddy: acrescente este bloco ao Caddyfile existente. Troque pelo seu subdomínio
 # (o DNS dele precisa apontar para o IP da VPS).
 tracking.odingdong.tech {
-	reverse_proxy 127.0.0.1:3100
+	# A porta tem que ser igual ao PORT do /opt/tracking/.env (padrão 3101).
+	reverse_proxy 127.0.0.1:3101
 }
