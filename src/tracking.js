@@ -1,6 +1,8 @@
 // Regras de negócio: registrar visita, clique no botão, venda e gerar a
 // planilha do Google Ads. Sem HTTP aqui, para dar para testar isolado.
 
+import { isValidPid } from './products.js'
+
 const CID_RE = /^[A-Za-z0-9_-]{6,64}$/
 
 // Campos da URL de chegada que guardamos. A chave é o nome da coluna.
@@ -43,7 +45,11 @@ export function isValidCid(cid) {
   return typeof cid === 'string' && CID_RE.test(cid)
 }
 
-export function recordClick(db, { cid, url, referrer, ip, userAgent }, now = new Date()) {
+function existingProduct(db, pid) {
+  return isValidPid(pid) && db.prepare('SELECT 1 FROM products WHERE id = ?').get(pid) ? pid : null
+}
+
+export function recordClick(db, { cid, pid, test, url, referrer, ip, userAgent }, now = new Date()) {
   if (!isValidCid(cid)) return false
   let params = new URLSearchParams()
   try {
@@ -55,6 +61,8 @@ export function recordClick(db, { cid, url, referrer, ip, userAgent }, now = new
   row.referrer = clip(referrer, 1000)
   row.ip = clip(ip, 100)
   row.user_agent = clip(userAgent, 500)
+  row.product_id = existingProduct(db, pid)
+  row.is_test = test ? 1 : 0
 
   const cols = Object.keys(row)
   // Recarregar a página manda o mesmo cid de novo: mantém o primeiro registro.
@@ -74,6 +82,19 @@ export function recordOutbound(db, cid, now = new Date()) {
   return res.changes > 0
 }
 
+// Sinal do script: ele está na página e achou N links de compra.
+export function recordPing(db, { pid, url, links, test }, now = new Date()) {
+  if (!existingProduct(db, pid)) return false
+  const n = Number.isInteger(links) && links >= 0 ? Math.min(links, 1000) : null
+  db.prepare(
+    `UPDATE products SET last_ping_at = ?, last_ping_url = ?, last_ping_links = ?,
+            last_test_at = CASE WHEN ? THEN ? ELSE last_test_at END
+      WHERE id = ?`,
+  ).run(now.toISOString(), clip(url, 2000), n, test ? 1 : 0, now.toISOString(), pid)
+  return true
+}
+
+const TEST_RE = /^(teste|test)$/i
 const REFUND_RE = /refund|chargeback|cancel|reembolso|estorno/i
 
 // Postback da BuyGoods. Aceita vários nomes de parâmetro para não depender
@@ -86,6 +107,7 @@ export function recordPostback(db, params, now = new Date()) {
   const amount = Number.parseFloat(String(amountRaw ?? '0').replace(',', '.')) || 0
   const product = pick(params, ['product', 'produto', 'product_codename'])
   const isRefund = REFUND_RE.test(type)
+  const isTest = TEST_RE.test(type)
 
   const res = db
     .prepare(
@@ -99,14 +121,14 @@ export function recordPostback(db, params, now = new Date()) {
       clip(type, 50),
       isRefund ? -Math.abs(amount) : amount,
       clip(product, 200),
-      isRefund ? 'refund' : 'approved',
+      isRefund ? 'refund' : isTest ? 'test' : 'approved',
       clip(params.toString(), 2000),
     )
 
   if (isRefund && orderId) {
     db.prepare(`UPDATE conversions SET status = 'refunded' WHERE order_id = ? AND status = 'approved'`).run(orderId)
   }
-  return { duplicate: res.changes === 0, refund: isRefund, subid, orderId, amount, type }
+  return { duplicate: res.changes === 0, refund: isRefund, test: isTest, subid, orderId, amount, type }
 }
 
 // "2026-10-26 15:04:05+0000" — formato aceito pelo Google Ads.
@@ -120,26 +142,29 @@ function csvCell(v) {
 }
 
 // Planilha de conversões offline no modelo "Google Click ID" do Google Ads.
-// Só entram vendas aprovadas que vieram de um clique com gclid.
-export function exportGoogleAdsCsv(db, { conversionName, currency, days }, now = new Date()) {
+// Só entram vendas aprovadas que vieram de um clique com gclid. Cada venda usa
+// o nome de conversão do seu produto (ou o padrão, se a visita não tem produto).
+// Com productId, só as vendas daquele produto.
+export function exportGoogleAdsCsv(db, { conversionName, currency, days, productId }, now = new Date()) {
   const since = new Date(now.getTime() - days * 86400000).toISOString()
   const rows = db
     .prepare(
-      `SELECT c.gclid, v.created_at, v.amount
-         FROM conversions v JOIN clicks c ON c.id = v.subid
+      `SELECT c.gclid, v.created_at, v.amount, COALESCE(p.conversion_name, ?) AS name
+         FROM conversions v
+         JOIN clicks c ON c.id = v.subid
+         LEFT JOIN products p ON p.id = c.product_id
         WHERE v.status = 'approved' AND c.gclid IS NOT NULL AND v.created_at >= ?
+          AND (? IS NULL OR c.product_id = ?)
         ORDER BY v.created_at`,
     )
-    .all(since)
+    .all(conversionName, since, productId ?? null, productId ?? null)
 
   const lines = [
     'Parameters:TimeZone=+0000',
     'Google Click ID,Conversion Name,Conversion Time,Conversion Value,Conversion Currency',
   ]
   for (const r of rows) {
-    lines.push(
-      [r.gclid, conversionName, googleTime(r.created_at), r.amount.toFixed(2), currency].map(csvCell).join(','),
-    )
+    lines.push([r.gclid, r.name, googleTime(r.created_at), r.amount.toFixed(2), currency].map(csvCell).join(','))
   }
   return lines.join('\r\n') + '\r\n'
 }

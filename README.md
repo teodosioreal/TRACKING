@@ -68,38 +68,41 @@ systemctl enable --now tracking-update.timer tracking-backup.timer
 - **Backup:** todo dia às 04:00 grava uma cópia do banco em
   `dados/backups/` e guarda os últimos 14 dias.
 
-## Configurar
+## Como usar
 
-Abra `https://tracking.odingdong.tech/configurar` (login do `.env`). A página mostra
-tudo pronto para copiar:
+Abra `https://tracking.odingdong.tech` (login do `.env`).
 
-1. **Script da página de review** — `<script src=".../t.js" async></script>`.
-   Todo link que aponta para `buygoods` recebe `subid=ID_DA_VISITA`. Para um
-   link de outro domínio, coloque `data-rastrear` no `<a>`.
-2. **Sufixo do URL final no Google Ads** (nível da conta), com a
-   codificação automática (gclid) ativada:
-   `campaignid={campaignid}&adgroupid={adgroupid}&keyword={keyword}&matchtype={matchtype}&device={device}&network={network}`
-3. **Postback na BuyGoods** (Postback Pixels, vale para todas as ofertas):
-   `.../postback?key=CHAVE&subid={SUBID}&order={ORDERID}&amount={COMMISSION_AMOUNT}&type={CONV_TYPE}&product={PRODUCT_CODENAME}`
-4. **Google Ads**:
-   - Crie uma ação de conversão do tipo *Importar → conversões de cliques*
-     com o nome **exatamente igual** a `CONVERSION_NAME` do `.env`.
-   - Em *Conversões → Uploads → Programações*, crie uma programação com fonte
-     **HTTPS** apontando para `.../google-ads.csv?key=CHAVE`, a cada 6 horas.
+1. **Produtos → Novo produto**: nome, plataforma (BuyGoods), nome da
+   conversão no Google Ads e o endereço da página de review.
+2. Na página do produto, siga os 3 passos. O quadro **Status da
+   configuração** se atualiza sozinho e mostra o que já está funcionando:
+   - script instalado na página e quantos links da BuyGoods ele marcou;
+   - visita vinda do Google Ads (gclid);
+   - venda recebida da BuyGoods;
+   - Google Ads lendo a planilha.
+3. **Testar instalação** abre a página com `?rt_teste=1`; essa visita fica
+   marcada como teste e não entra nos números. **Simular venda de teste**
+   liga uma venda falsa à última visita do produto (não vai pro Google Ads).
 
-A planilha traz as vendas aprovadas dos últimos `EXPORT_DAYS` dias que têm
-gclid. O Google ignora as que já importou, então repetir não tem problema.
-Reembolsos (`type` com refund/chargeback) saem da planilha e aparecem no painel.
+Detalhes:
+
+- O **postback da BuyGoods é um só** para todos os produtos
+  (Configurações). A venda cai no produto certo pela visita que a gerou.
+- Cada produto tem sua **planilha** (`/google-ads.csv?key=...&produto=ID`)
+  com o seu nome de conversão. Se todos os produtos rodam na mesma conta do
+  Google Ads, dá para usar a planilha geral (`/google-ads.csv?key=...`).
+- Vendas aprovadas dos últimos `EXPORT_DAYS` dias, com gclid. O Google
+  ignora o que já importou. Reembolsos saem da planilha.
 
 ## Endpoints
 
 | Rota | Acesso | O que faz |
 | --- | --- | --- |
 | `GET /t.js` | público | script da página de review |
-| `POST /c`, `POST /o` | público | registra visita / clique no botão |
+| `POST /c`, `/o`, `/p` | público | visita / clique no botão / sinal do script |
 | `GET\|POST /postback` | `key` | recebe venda da BuyGoods |
 | `GET /google-ads.csv` | `key` | planilha de conversões do Google Ads |
-| `GET /`, `/configurar` | login | painel e configuração |
+| `GET /`, `/produtos`, `/configuracoes` | login | painel, produtos e configurações |
 | `GET /saude` | público | checagem de "está no ar" |
 
 ## Testes

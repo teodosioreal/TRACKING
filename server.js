@@ -3,10 +3,28 @@ import { existsSync, readFileSync } from 'node:fs'
 import { timingSafeEqual } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
-import { openDb } from './src/db.js'
-import { recordClick, recordOutbound, recordPostback, exportGoogleAdsCsv } from './src/tracking.js'
+import { openDb, getSetting, setSetting } from './src/db.js'
+import { recordClick, recordOutbound, recordPing, recordPostback, exportGoogleAdsCsv } from './src/tracking.js'
 import { dashboard, PERIODS } from './src/stats.js'
-import { dashboardPage, setupPage } from './src/views.js'
+import {
+  isValidPid,
+  parseProductForm,
+  createProduct,
+  updateProduct,
+  setArchived,
+  getProduct,
+  listProducts,
+  productStatus,
+} from './src/products.js'
+import { checkPage } from './src/verify.js'
+import {
+  dashboardPage,
+  productsPage,
+  productFormPage,
+  productPage,
+  checklistHtml,
+  settingsPage,
+} from './src/views.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 if (existsSync(join(here, '.env'))) process.loadEnvFile(join(here, '.env'))
@@ -32,6 +50,15 @@ if (!cfg.adminPassword || !cfg.secretKey) {
 const db = openDb(cfg.dbPath)
 const trackerJs = readFileSync(join(here, 'public', 't.js'), 'utf8')
 
+const FLASH = {
+  criado: 'Produto cadastrado. Agora copie o script do passo 1 e cole na página de review.',
+  salvo: 'Alterações salvas.',
+  arquivado: 'Produto arquivado.',
+  reativado: 'Produto reativado.',
+  teste: 'Venda de teste registrada e ligada a este produto. Ela não vai para o Google Ads.',
+  'sem-visita': 'Ainda não há visita deste produto. Clique em "Testar instalação" primeiro e depois simule a venda.',
+}
+
 function safeEqual(a, b) {
   const x = Buffer.from(String(a))
   const y = Buffer.from(String(b))
@@ -53,6 +80,9 @@ function send(res, status, body, type = 'text/plain; charset=utf-8', extra = {})
   res.writeHead(status, { 'Content-Type': type, 'Cache-Control': 'no-store', ...extra })
   res.end(body)
 }
+
+const html = (res, body, status = 200) => send(res, status, body, 'text/html; charset=utf-8')
+const redirect = (res, to) => send(res, 303, '', 'text/plain', { Location: to })
 
 const CORS = { 'Access-Control-Allow-Origin': '*' }
 
@@ -79,22 +109,31 @@ function isAdmin(req) {
   return safeEqual(user, cfg.adminUser) && safeEqual(rest.join(':'), cfg.adminPassword)
 }
 
-async function handle(req, res) {
-  const url = new URL(req.url, 'http://x')
-  const path = url.pathname
+// Formulários do painel só podem vir do próprio painel.
+function sameOrigin(req) {
+  const origin = req.headers.origin || req.headers.referer
+  if (!origin) return true
+  try {
+    return new URL(origin).host === req.headers.host
+  } catch {
+    return false
+  }
+}
+
+async function handlePublic(req, res, url) {
+  const { pathname: path } = url
   const method = req.method
 
   if (method === 'OPTIONS') {
-    return send(res, 204, '', 'text/plain', { ...CORS, 'Access-Control-Allow-Headers': 'Content-Type' })
+    send(res, 204, '', 'text/plain', { ...CORS, 'Access-Control-Allow-Headers': 'Content-Type' })
+    return true
   }
 
-  // --- Público: script, visita, clique no botão ---
   if (path === '/t.js' && method === 'GET') {
-    const js = trackerJs.replace('__BASE__', baseUrl(req))
-    return send(res, 200, js, 'application/javascript; charset=utf-8', {
-      ...CORS,
-      'Cache-Control': 'public, max-age=300',
-    })
+    const pid = url.searchParams.get('p')
+    const js = trackerJs.replace('__BASE__', baseUrl(req)).replace('__PRODUCT__', isValidPid(pid) ? pid : '')
+    send(res, 200, js, 'application/javascript; charset=utf-8', { ...CORS, 'Cache-Control': 'public, max-age=300' })
+    return true
   }
 
   if (path === '/c' && method === 'POST') {
@@ -102,23 +141,35 @@ async function handle(req, res) {
       const body = JSON.parse(await readBody(req))
       recordClick(db, {
         cid: body.cid,
+        pid: body.pid,
+        test: body.test === true,
         url: body.url,
         referrer: body.ref,
         ip: clientIp(req),
         userAgent: req.headers['user-agent'],
       })
     } catch {}
-    return send(res, 204, '', 'text/plain', CORS)
+    send(res, 204, '', 'text/plain', CORS)
+    return true
   }
 
   if (path === '/o' && method === 'POST') {
     try {
       recordOutbound(db, (await readBody(req, 200)).trim())
     } catch {}
-    return send(res, 204, '', 'text/plain', CORS)
+    send(res, 204, '', 'text/plain', CORS)
+    return true
   }
 
-  // --- Protegido por chave: postback da BuyGoods e planilha do Google Ads ---
+  if (path === '/p' && method === 'POST') {
+    try {
+      const body = JSON.parse(await readBody(req))
+      recordPing(db, { pid: body.pid, url: body.url, links: body.links, test: body.test === true })
+    } catch {}
+    send(res, 204, '', 'text/plain', CORS)
+    return true
+  }
+
   if (path === '/postback' && (method === 'GET' || method === 'POST')) {
     let params = url.searchParams
     if (method === 'POST') {
@@ -127,56 +178,191 @@ async function handle(req, res) {
       for (const [k, v] of new URLSearchParams(body)) if (!merged.has(k)) merged.set(k, v)
       params = merged
     }
-    if (!safeEqual(params.get('key') || '', cfg.secretKey)) return send(res, 403, 'chave inválida')
+    if (!safeEqual(params.get('key') || '', cfg.secretKey)) {
+      send(res, 403, 'chave inválida')
+      return true
+    }
     params.delete('key')
     const r = recordPostback(db, params)
     console.log(
-      `[postback] ${r.duplicate ? 'duplicado' : r.refund ? 'reembolso' : 'venda'} pedido=${r.orderId} subid=${r.subid} valor=${r.amount} tipo=${r.type}`,
+      `[postback] ${r.duplicate ? 'duplicado' : r.refund ? 'reembolso' : r.test ? 'teste' : 'venda'} pedido=${r.orderId} subid=${r.subid} valor=${r.amount} tipo=${r.type}`,
     )
-    return send(res, 200, 'ok')
+    send(res, 200, 'ok')
+    return true
   }
 
   if (path === '/google-ads.csv' && (method === 'GET' || method === 'HEAD')) {
-    if (!safeEqual(url.searchParams.get('key') || '', cfg.secretKey) && !isAdmin(req)) {
-      return send(res, 403, 'chave inválida')
+    const admin = isAdmin(req)
+    if (!safeEqual(url.searchParams.get('key') || '', cfg.secretKey) && !admin) {
+      send(res, 403, 'chave inválida')
+      return true
+    }
+    const pid = url.searchParams.get('produto')
+    if (pid && !getProduct(db, pid)) {
+      send(res, 404, 'produto não encontrado')
+      return true
     }
     const csv = exportGoogleAdsCsv(db, {
       conversionName: cfg.conversionName,
       currency: cfg.currency,
       days: cfg.exportDays,
+      productId: pid || null,
     })
-    return send(res, 200, method === 'HEAD' ? '' : csv, 'text/csv; charset=utf-8', {
+    // Leitura feita pelo Google Ads (não por você no navegador logado).
+    if (!admin) {
+      setSetting(db, `csv_fetch:${pid || 'all'}`, { at: new Date().toISOString(), ua: req.headers['user-agent'] || '' })
+    }
+    send(res, 200, method === 'HEAD' ? '' : csv, 'text/csv; charset=utf-8', {
       'Content-Disposition': 'inline; filename="google-ads-conversoes.csv"',
     })
+    return true
   }
 
-  if (path === '/saude') return send(res, 200, 'ok')
-
-  // --- Painel ---
-  if (!isAdmin(req)) {
-    return send(res, 401, 'login necessário', 'text/plain; charset=utf-8', {
-      'WWW-Authenticate': 'Basic realm="Rastreador", charset="UTF-8"',
-    })
+  if (path === '/saude') {
+    send(res, 200, 'ok')
+    return true
   }
+  return false
+}
+
+async function handleAdmin(req, res, url) {
+  const { pathname: path } = url
+  const method = req.method
+
+  if (method === 'POST' && !sameOrigin(req)) return send(res, 403, 'origem inválida')
 
   if (path === '/' && method === 'GET') {
     const period = PERIODS[url.searchParams.get('periodo')] ? url.searchParams.get('periodo') : 'hoje'
-    const data = dashboard(db, period, cfg.tz)
-    return send(res, 200, dashboardPage(data, { period, tz: cfg.tz, currency: cfg.currency }), 'text/html; charset=utf-8')
+    const product = getProduct(db, url.searchParams.get('produto'))
+    const data = dashboard(db, period, cfg.tz, new Date(), product?.id)
+    return html(
+      res,
+      dashboardPage(data, {
+        period,
+        tz: cfg.tz,
+        currency: cfg.currency,
+        products: listProducts(db),
+        productId: product?.id || null,
+      }),
+    )
   }
 
-  if (path === '/configurar' && method === 'GET') {
-    const html = setupPage({
-      base: baseUrl(req),
-      key: cfg.secretKey,
-      conversionName: cfg.conversionName,
-      currency: cfg.currency,
-      days: cfg.exportDays,
-    })
-    return send(res, 200, html, 'text/html; charset=utf-8')
+  if (path === '/produtos' && method === 'GET') {
+    const showArchived = url.searchParams.has('arquivados')
+    return html(
+      res,
+      productsPage(listProducts(db, { archived: showArchived }), {
+        currency: cfg.currency,
+        archivedCount: listProducts(db, { archived: true }).length,
+        showArchived,
+      }),
+    )
   }
+
+  if (path === '/produtos/novo' && method === 'GET') {
+    return html(res, productFormPage({ values: { platform: 'buygoods' }, defaultConversion: 'Compra - Nome do produto' }))
+  }
+
+  if (path === '/produtos' && method === 'POST') {
+    const form = new URLSearchParams(await readBody(req))
+    const { values, errors } = parseProductForm(form)
+    if (errors) return html(res, productFormPage({ values, errors, defaultConversion: 'Compra - Nome do produto' }), 400)
+    const id = createProduct(db, values)
+    return redirect(res, `/produtos/${id}?ok=criado`)
+  }
+
+  const m = path.match(/^\/produtos\/(p[a-z0-9]{8})(?:\/([a-z-]+))?$/)
+  if (m) {
+    const product = getProduct(db, m[1])
+    if (!product) return send(res, 404, 'produto não encontrado')
+    const action = m[2] || ''
+
+    if (!action && method === 'GET') {
+      const flashKey = url.searchParams.get('ok') || url.searchParams.get('erro')
+      const flash = FLASH[flashKey] ? { text: FLASH[flashKey], bad: url.searchParams.has('erro') } : null
+      return html(
+        res,
+        productPage(product, productStatus(db, product), {
+          base: baseUrl(req),
+          key: cfg.secretKey,
+          tz: cfg.tz,
+          currency: cfg.currency,
+          flash,
+        }),
+      )
+    }
+
+    if (!action && method === 'POST') {
+      const form = new URLSearchParams(await readBody(req))
+      const { values, errors } = parseProductForm(form)
+      if (errors) return html(res, productFormPage({ product, values, errors }), 400)
+      updateProduct(db, product.id, values)
+      return redirect(res, `/produtos/${product.id}?ok=salvo`)
+    }
+
+    if (action === 'editar' && method === 'GET') return html(res, productFormPage({ product }))
+
+    if (action === 'checklist' && method === 'GET') {
+      return html(res, checklistHtml(product, productStatus(db, product), { tz: cfg.tz }))
+    }
+
+    if (action === 'verificar' && method === 'GET') {
+      const r = await checkPage(product)
+      return send(res, 200, JSON.stringify({ html: r }), 'application/json; charset=utf-8')
+    }
+
+    if ((action === 'arquivar' || action === 'reativar') && method === 'POST') {
+      setArchived(db, product.id, action === 'arquivar')
+      return redirect(res, `/produtos/${product.id}?ok=${action === 'arquivar' ? 'arquivado' : 'reativado'}`)
+    }
+
+    if (action === 'simular-venda' && method === 'POST') {
+      const visit = db
+        .prepare('SELECT id FROM clicks WHERE product_id = ? ORDER BY created_at DESC LIMIT 1')
+        .get(product.id)
+      if (!visit) return redirect(res, `/produtos/${product.id}?erro=sem-visita`)
+      recordPostback(
+        db,
+        new URLSearchParams({ subid: visit.id, order: `TESTE-${Date.now()}`, amount: '1.00', type: 'teste' }),
+      )
+      return redirect(res, `/produtos/${product.id}?ok=teste`)
+    }
+  }
+
+  if (path === '/configuracoes' && method === 'GET') {
+    const lastPostback = db
+      .prepare(`SELECT created_at FROM conversions WHERE status != 'test' ORDER BY created_at DESC LIMIT 1`)
+      .get()
+    return html(
+      res,
+      settingsPage({
+        base: baseUrl(req),
+        key: cfg.secretKey,
+        conversionName: cfg.conversionName,
+        currency: cfg.currency,
+        days: cfg.exportDays,
+        lastPostback,
+        csvFetch: getSetting(db, 'csv_fetch:all'),
+        tz: cfg.tz,
+      }),
+    )
+  }
+
+  // Endereço antigo.
+  if (path === '/configurar') return redirect(res, '/configuracoes')
 
   return send(res, 404, 'não encontrado')
+}
+
+async function handle(req, res) {
+  const url = new URL(req.url, 'http://x')
+  if (await handlePublic(req, res, url)) return
+  if (!isAdmin(req)) {
+    return send(res, 401, 'login necessário', 'text/plain; charset=utf-8', {
+      'WWW-Authenticate': 'Basic realm="Tracking", charset="UTF-8"',
+    })
+  }
+  return handleAdmin(req, res, url)
 }
 
 createServer((req, res) => {
@@ -185,5 +371,5 @@ createServer((req, res) => {
     if (!res.headersSent) send(res, 500, 'erro interno')
   })
 }).listen(cfg.port, () => {
-  console.log(`Rastreador rodando em http://localhost:${cfg.port}`)
+  console.log(`Tracking rodando em http://localhost:${cfg.port}`)
 })

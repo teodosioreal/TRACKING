@@ -1,9 +1,10 @@
-// Script da página de review. Uso:
-//   <script src="https://tracking.odingdong.tech/t.js" async></script>
+// Script da página de review. Cada produto tem o seu (o painel gera):
+//   <script src="https://tracking.odingdong.tech/t.js?p=ID_DO_PRODUTO" async></script>
 // Opcional no <script>: data-dominios="buygoods.com,outro.com" e data-param="subid".
 ;(function () {
   var BASE = '__BASE__'
-  var KEY = 'rt_visita'
+  var PID = '__PRODUCT__'
+  var KEY = 'rt_visita' + (PID ? '_' + PID : '')
   var TTL = 90 * 864e5
   var script = document.currentScript || {}
   var data = script.dataset || {}
@@ -14,6 +15,7 @@
 
   var q = new URLSearchParams(location.search)
   var adId = q.get('gclid') || q.get('gbraid') || q.get('wbraid') || ''
+  var isTest = q.has('rt_teste')
 
   function load() {
     try {
@@ -39,14 +41,18 @@
   var cid = visit.cid
 
   // text/plain evita preflight de CORS.
-  try {
-    fetch(BASE + '/c', {
-      method: 'POST',
-      keepalive: true,
-      headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({ cid: cid, url: location.href, ref: document.referrer }),
-    })
-  } catch (e) {}
+  function post(path, body) {
+    try {
+      fetch(BASE + path, {
+        method: 'POST',
+        keepalive: true,
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify(body),
+      })
+    } catch (e) {}
+  }
+
+  post('/c', { cid: cid, pid: PID, test: isTest, url: location.href, ref: document.referrer })
 
   function isTracked(a) {
     if (a.hasAttribute('data-rastrear')) return true
@@ -71,7 +77,9 @@
 
   function tagAll() {
     var links = document.querySelectorAll('a[href]')
-    for (var i = 0; i < links.length; i++) tag(links[i])
+    var n = 0
+    for (var i = 0; i < links.length; i++) if (tag(links[i])) n++
+    return n
   }
 
   // Clique no botão de compra: garante o subid e avisa o rastreador.
@@ -86,6 +94,10 @@
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', tagAll)
   else tagAll()
-  // Páginas que montam os links depois (ex.: editores visuais).
-  setTimeout(tagAll, 1500)
+  // Páginas que montam os links depois (ex.: editores visuais). Depois disso,
+  // avisa o painel que o script está instalado e quantos links de compra achou.
+  setTimeout(function () {
+    var n = tagAll()
+    if (PID) post('/p', { pid: PID, cid: cid, test: isTest, url: location.href, links: n })
+  }, 1500)
 })()

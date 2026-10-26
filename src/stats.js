@@ -55,20 +55,25 @@ const CAMPAIGN = `COALESCE(NULLIF(c.utm_campaign,''), NULLIF(c.campaign_id,''),
 const KEYWORD = `COALESCE(NULLIF(c.keyword,''), NULLIF(c.utm_term,''),
   CASE WHEN c.id IS NULL THEN '(venda sem clique)' ELSE '(sem palavra-chave)' END)`
 
-function breakdown(db, expr, from, to, limit) {
+// Filtro opcional por produto. "?" vira o id do produto ou NULL (todos).
+const PRODUCT_FILTER = `(? IS NULL OR c.product_id = ?)`
+
+function breakdown(db, expr, from, to, limit, pid) {
   const visits = db
     .prepare(
       `SELECT ${expr} AS label, COUNT(*) AS visitas, SUM(c.outbound_at IS NOT NULL) AS cliques
-         FROM clicks c WHERE c.created_at >= ? AND c.created_at < ? GROUP BY label`,
+         FROM clicks c WHERE c.is_test = 0 AND c.created_at >= ? AND c.created_at < ? AND ${PRODUCT_FILTER}
+        GROUP BY label`,
     )
-    .all(from, to)
+    .all(from, to, pid, pid)
   const sales = db
     .prepare(
       `SELECT ${expr} AS label, COUNT(*) AS vendas, SUM(v.amount) AS comissao
          FROM conversions v LEFT JOIN clicks c ON c.id = v.subid
-        WHERE v.status = 'approved' AND v.created_at >= ? AND v.created_at < ? GROUP BY label`,
+        WHERE v.status = 'approved' AND v.created_at >= ? AND v.created_at < ? AND ${PRODUCT_FILTER}
+        GROUP BY label`,
     )
-    .all(from, to)
+    .all(from, to, pid, pid)
 
   const map = new Map()
   const get = (label) => {
@@ -80,38 +85,41 @@ function breakdown(db, expr, from, to, limit) {
   return [...map.values()].sort((a, b) => b.comissao - a.comissao || b.visitas - a.visitas).slice(0, limit)
 }
 
-export function dashboard(db, period, tz, now = new Date()) {
+export function dashboard(db, period, tz, now = new Date(), productId = null) {
   const [from, to] = periodRange(period, tz, now)
+  const pid = productId || null
   const t = db
     .prepare(
       `SELECT COUNT(*) AS visitas, SUM(outbound_at IS NOT NULL) AS cliques, SUM(gclid IS NOT NULL) AS google
-         FROM clicks WHERE created_at >= ? AND created_at < ?`,
+         FROM clicks c WHERE c.is_test = 0 AND c.created_at >= ? AND c.created_at < ? AND ${PRODUCT_FILTER}`,
     )
-    .get(from, to)
+    .get(from, to, pid, pid)
   const s = db
     .prepare(
-      `SELECT SUM(status = 'approved') AS vendas,
-              SUM(CASE WHEN status = 'approved' THEN amount ELSE 0 END) AS comissao,
-              SUM(status = 'refund') AS reembolsos
-         FROM conversions WHERE created_at >= ? AND created_at < ?`,
+      `SELECT SUM(v.status = 'approved') AS vendas,
+              SUM(CASE WHEN v.status = 'approved' THEN v.amount ELSE 0 END) AS comissao,
+              SUM(v.status = 'refund') AS reembolsos
+         FROM conversions v LEFT JOIN clicks c ON c.id = v.subid
+        WHERE v.created_at >= ? AND v.created_at < ? AND ${PRODUCT_FILTER}`,
     )
-    .get(from, to)
+    .get(from, to, pid, pid)
 
   const recentSales = db
     .prepare(
-      `SELECT v.*, c.gclid, ${CAMPAIGN} AS campanha, ${KEYWORD} AS palavra
-         FROM conversions v LEFT JOIN clicks c ON c.id = v.subid
-        WHERE v.created_at >= ? AND v.created_at < ?
+      `SELECT v.*, c.gclid, p.name AS produto, ${CAMPAIGN} AS campanha, ${KEYWORD} AS palavra
+         FROM conversions v LEFT JOIN clicks c ON c.id = v.subid LEFT JOIN products p ON p.id = c.product_id
+        WHERE v.created_at >= ? AND v.created_at < ? AND ${PRODUCT_FILTER}
         ORDER BY v.created_at DESC LIMIT 100`,
     )
-    .all(from, to)
+    .all(from, to, pid, pid)
   const recentClicks = db
     .prepare(
-      `SELECT c.*, ${CAMPAIGN} AS campanha, ${KEYWORD} AS palavra
-         FROM clicks c WHERE c.created_at >= ? AND c.created_at < ?
+      `SELECT c.*, p.name AS produto, ${CAMPAIGN} AS campanha, ${KEYWORD} AS palavra
+         FROM clicks c LEFT JOIN products p ON p.id = c.product_id
+        WHERE c.created_at >= ? AND c.created_at < ? AND ${PRODUCT_FILTER}
         ORDER BY c.created_at DESC LIMIT 50`,
     )
-    .all(from, to)
+    .all(from, to, pid, pid)
 
   return {
     totals: {
@@ -122,8 +130,8 @@ export function dashboard(db, period, tz, now = new Date()) {
       comissao: s.comissao || 0,
       reembolsos: s.reembolsos || 0,
     },
-    campaigns: breakdown(db, CAMPAIGN, from, to, 50),
-    keywords: breakdown(db, KEYWORD, from, to, 30),
+    campaigns: breakdown(db, CAMPAIGN, from, to, 50, pid),
+    keywords: breakdown(db, KEYWORD, from, to, 30, pid),
     recentSales,
     recentClicks,
   }
