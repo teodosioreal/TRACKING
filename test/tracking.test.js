@@ -114,3 +114,48 @@ test('"hoje" começa à meia-noite no fuso do painel', () => {
   // 02:00 UTC do dia 26 ainda é dia 25 em São Paulo (UTC-3).
   assert.equal(from, '2026-10-25T03:00:00.000Z')
 })
+
+test('teste da BuyGoods: comissão 0 sem subid é teste, mesmo com número de pedido', () => {
+  const db = setup()
+  const r = recordPostback(db, new URLSearchParams('order=987654&amount=0.00&type=sale'))
+  assert.equal(r.test, true)
+  assert.equal(db.prepare('SELECT status FROM conversions').get().status, 'test')
+  // Comissão 0 COM visita continua venda (não é o botão Test).
+  assert.equal(recordPostback(db, new URLSearchParams('subid=visita01&order=1&amount=0')).test, false)
+  // Venda sem visita mas com comissão continua venda.
+  assert.equal(recordPostback(db, new URLSearchParams('order=2&amount=12.5')).test, false)
+})
+
+test('mesmo postback sem número de pedido no mesmo segundo conta uma vez', () => {
+  const db = setup()
+  const t = new Date('2026-10-26T15:00:00.200Z')
+  const p = new URLSearchParams('amount=0&type=sale')
+  assert.equal(recordPostback(db, p, t).duplicate, false)
+  assert.equal(recordPostback(db, p, new Date('2026-10-26T15:00:00.900Z')).duplicate, true)
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM conversions').get().n, 1)
+  // Bem depois, é outro evento.
+  assert.equal(recordPostback(db, p, new Date('2026-10-26T15:05:00Z')).duplicate, false)
+})
+
+test('testes antigos gravados como venda viram teste ao abrir o banco', async () => {
+  const { mkdtempSync, rmSync } = await import('node:fs')
+  const { tmpdir } = await import('node:os')
+  const { join } = await import('node:path')
+  const dir = mkdtempSync(join(tmpdir(), 'trk-'))
+  const path = join(dir, 'r.db')
+  const db = openDb(path)
+  db.exec(`DELETE FROM settings WHERE key = 'fix_zero_tests_v1'`)
+  db.exec(`INSERT INTO conversions (created_at, subid, order_id, type, amount, status) VALUES
+    ('2026-10-26T10:00:00Z', NULL, NULL, 'sale', 0, 'approved'),
+    ('2026-10-26T10:00:01Z', NULL, '555', 'sale', 0, 'approved'),
+    ('2026-10-26T10:00:02Z', NULL, '556', 'sale', 40, 'approved'),
+    ('2026-10-26T10:00:03Z', 'visita01', '557', 'sale', 0, 'approved')`)
+  db.close()
+  const again = openDb(path)
+  assert.deepEqual(
+    again.prepare('SELECT order_id, status FROM conversions ORDER BY created_at').all().map((r) => [r.order_id, r.status]),
+    [[null, 'test'], ['555', 'test'], ['556', 'approved'], ['557', 'approved']],
+  )
+  again.close()
+  rmSync(dir, { recursive: true })
+})

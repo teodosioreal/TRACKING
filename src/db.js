@@ -98,6 +98,14 @@ export function openDb(path) {
   if (!pcols.has('affiliate_url')) db.exec('ALTER TABLE products ADD COLUMN affiliate_url TEXT')
   if (!pcols.has('tracking_param')) db.exec('ALTER TABLE products ADD COLUMN tracking_param TEXT')
 
+  // Uma vez: testes da BuyGoods gravados como venda antes da regra "comissão 0
+  // sem ID da visita = teste" passam a ser teste.
+  if (!db.prepare(`SELECT 1 FROM settings WHERE key = 'fix_zero_tests_v1'`).get()) {
+    db.exec(`UPDATE conversions SET status = 'test'
+              WHERE status = 'approved' AND amount = 0 AND (subid IS NULL OR subid = '')`)
+    db.exec(`INSERT INTO settings (key, value) VALUES ('fix_zero_tests_v1', 'true')`)
+  }
+
   return db
 }
 

@@ -98,7 +98,8 @@ export function recordPing(db, { pid, url, links, test }, now = new Date()) {
 
 const TEST_RE = /^(teste|test)$/i
 // Teste disparado pela plataforma (ex.: botão "Test" do postback da BuyGoods):
-// "test" em algum campo, ou nem ID da visita nem número de pedido.
+// "test" em algum campo, nem ID da visita nem número de pedido, ou comissão 0
+// sem ID da visita (venda real sempre tem comissão).
 const PLATFORM_TEST_RE = /test/i
 const REFUND_RE = /refund|chargeback|cancel|reembolso|estorno/i
 
@@ -115,7 +116,18 @@ export function recordPostback(db, params, now = new Date()) {
   const isTest =
     TEST_RE.test(type) ||
     [subid, orderId, type, product].some((v) => v && PLATFORM_TEST_RE.test(v)) ||
-    (!subid && !orderId)
+    (!subid && !orderId) ||
+    (!subid && amount === 0)
+
+  // Postback sem número de pedido não tem como cair no UNIQUE(order_id, type):
+  // o mesmo postback chegando de novo em até 2 segundos é tratado como repetido.
+  if (!orderId) {
+    const since = new Date(now.getTime() - 2000).toISOString()
+    const dup = db
+      .prepare(`SELECT 1 FROM conversions WHERE order_id IS NULL AND raw = ? AND created_at >= ? LIMIT 1`)
+      .get(clip(params.toString(), 2000), since)
+    if (dup) return { duplicate: true, refund: isRefund, test: isTest, subid, orderId, amount, type }
+  }
 
   const res = db
     .prepare(
