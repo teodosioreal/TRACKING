@@ -131,6 +131,7 @@ Detalhes:
 | `POST /c`, `/o`, `/p` | público | visita / clique no botão / sinal do script |
 | `GET\|POST /postback` | `key` | recebe venda da BuyGoods |
 | `GET /google-ads.csv` | `key` | planilha de conversões do Google Ads |
+| `POST /script-relatorio` | `key` | o script do Google Ads informa quantas vendas enviou ou o erro |
 | `GET /login`, `POST /login`, `POST /sair` | público | entrar e sair |
 | demais páginas (`/`, `/visitantes`, `/vendas`, `/produtos`, `/configuracoes`...) | sessão | painel |
 | `GET /saude` | público | checagem de "está no ar" |

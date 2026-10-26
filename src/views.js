@@ -519,7 +519,9 @@ export function checklistHtml(product, st, { tz }) {
   }
 
   items.push(
-    st.csvFetch
+    st.scriptReport?.erro
+      ? item('bad', '!', 'Google Ads: último envio com erro', `${ago(st.scriptReport.at)}: ${esc(st.scriptReport.erro)}`)
+      : st.csvFetch
       ? item('ok', '✓', 'Google Ads lendo a planilha', `Última leitura ${ago(st.csvFetch.at)} (${esc(when(st.csvFetch.at, tz))}).`)
       : item('wait', '5', 'Google Ads lendo a planilha', 'Ainda não houve leitura. Cole o script do Google Ads (aba 3. Google Ads).'),
   )
@@ -548,6 +550,24 @@ function conversionSteps(name) {
 <li>o resto pode ficar no padrão. Salve.</li></ul></li>
 </ol>
 <p class="muted"><b>Conta dentro de uma MCC?</b> Na MCC, em ${where('Metas → Conversões → Configurações → Acompanhamento de conversões entre contas')}, a coluna <b>“Conta de conversão”</b> da subconta tem que estar <b>“Cliente”</b>. Senão a conversão e o script ficam presos na MCC, e não na conta de anúncios.</p>`
+}
+
+// Resultado do último envio do script do Google Ads.
+function scriptReportHtml(rep, { conversionName = null, csvFetch = null, tz } = {}) {
+  if (!rep) {
+    return csvFetch
+      ? '<div class="live old"><span class="pulse"></span><div><b>Sem relatório de envio.</b><span>O script leu a planilha, mas é a versão antiga, que não conta o resultado. Copie o script de novo e cole por cima no Google Ads.</span></div></div>'
+      : ''
+  }
+  const conta = rep.conta ? ` · conta ${esc(rep.conta.nome || '')}${rep.conta.id ? ` (${esc(rep.conta.id)})` : ''}` : ''
+  if (rep.erro) {
+    return `<div class="live" style="border:1px solid var(--bad);background:var(--badbg)"><div class="ic" style="background:var(--bad)">!</div><div><b class="bad">Último envio com erro</b>
+<span>${ago(rep.at)} (${esc(when(rep.at, tz))})${conta}</span><span class="params"><code>${esc(rep.erro)}</code></span></div></div>`
+  }
+  const deste = conversionName != null ? ` · deste produto: <b>${rep.porConversao?.[conversionName] || 0}</b>` : ''
+  return `<div class="live fresh"><div class="ic">✓</div><div><b>Último envio: ${rep.enviadas} venda(s), sem erro</b>
+<span>${ago(rep.at)} (${esc(when(rep.at, tz))})${deste}${conta}</span>
+<span>O Google processa o envio depois: se ele recusar alguma linha (ex.: nome de conversão diferente), o motivo aparece em ${where('Ferramentas → Ações em massa → Uploads')}.</span></div></div>`
 }
 
 // Passo a passo do script no Google Ads.
@@ -746,6 +766,7 @@ ${scriptSteps()}
 ${copyHidden('ads-script', adsScript, 'Copiar script')}
 <p>${st.csvFetch ? `<span class="ok">✓ O Google Ads leu a planilha ${ago(st.csvFetch.at)}.</span>` : '<span class="warn">O script ainda não leu a planilha.</span> <span class="muted">Depois de colar, clique em Executar e recarregue esta página.</span>'}
 <span class="muted">· ${st.salesForGoogle} venda(s) deste produto com gclid.</span></p>
+${scriptReportHtml(st.scriptReport, { conversionName: product.conversion_name, csvFetch: st.csvFetch, tz })}
 </div></section>
 
 <details class="howto"><summary>Dicas opcionais (não precisa para funcionar)</summary>
@@ -843,7 +864,7 @@ try{const r=await(await fetch('/produtos/'+pid+'/verificar')).json();out.innerHT
 
 // ---------------------------------------------------------------- Configurações
 
-export function settingsPage({ base, key, conversionName, currency, days, lastPostback, csvFetch, tz, flash, adsScript = '' }) {
+export function settingsPage({ base, key, conversionName, currency, days, lastPostback, csvFetch, scriptReport, tz, flash, adsScript = '' }) {
   const postback = `${base}/postback?key=${key}&subid={SUBID}&order={ORDERID}&amount={COMMISSION_AMOUNT}&type={CONV_TYPE}&product={PRODUCT_CODENAME}`
   const csv = `${base}/google-ads.csv?key=${key}`
   return layout(
@@ -863,6 +884,7 @@ ${LIVE}
 ${scriptSteps()}
 ${copyHidden('ads-script', adsScript, 'Copiar script')}
 <p>${csvFetch ? `<span class="ok">✓ Lida pela última vez ${ago(csvFetch.at)}.</span>` : '<span class="muted">Ainda não foi lida pelo Google Ads.</span>'} <span class="muted">Vendas aprovadas com gclid, em ${esc(currency)}. O Google ignora vendas que já importou.</span></p>
+${scriptReportHtml(scriptReport, { csvFetch, tz })}
 </div></section>
 
 <section id="versao"><h3>Versão no ar</h3><div class="box">

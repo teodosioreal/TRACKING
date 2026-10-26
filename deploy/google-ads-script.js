@@ -3,8 +3,22 @@
 // clique em Autorizar e deixe a Frequência em "Por hora". O painel
 // (Configurações) mostra este mesmo código já com o seu link.
 var PLANILHA = '__PLANILHA__';
+// Para onde o script conta ao rastreador quantas vendas enviou (ou o erro).
+var RELATORIO = '__RELATORIO__';
 
 function main() {
+  var relatorio = { enviadas: 0, porConversao: {}, erro: null, conta: conta() };
+  try {
+    relatorio.enviadas = enviar(relatorio.porConversao);
+  } catch (e) {
+    relatorio.erro = String((e && e.message) || e);
+    avisar(relatorio);
+    throw e;
+  }
+  avisar(relatorio);
+}
+
+function enviar(porConversao) {
   var resposta = UrlFetchApp.fetch(PLANILHA, { muteHttpExceptions: true });
   if (resposta.getResponseCode() !== 200) {
     throw new Error('Não consegui ler a planilha do rastreador (resposta ' + resposta.getResponseCode() + ').');
@@ -17,7 +31,7 @@ function main() {
       return l.length >= 5 && l[0];
     });
   Logger.log(vendas.length + ' venda(s) na planilha.');
-  if (!vendas.length) return;
+  if (!vendas.length) return 0;
 
   var upload = AdsApp.bulkUploads().newCsvUpload(
     ['Google Click ID', 'Conversion Name', 'Conversion Time', 'Conversion Value', 'Conversion Currency'],
@@ -33,7 +47,31 @@ function main() {
       'Conversion Value': l[3],
       'Conversion Currency': l[4],
     });
+    porConversao[l[1]] = (porConversao[l[1]] || 0) + 1;
   });
   upload.apply();
   Logger.log('Enviado. Resultado em Ferramentas → Ações em massa → Uploads. Vendas repetidas são ignoradas pelo Google.');
+  return vendas.length;
+}
+
+function conta() {
+  try {
+    var c = AdsApp.currentAccount();
+    return { id: c.getCustomerId(), nome: c.getName() };
+  } catch (e) {
+    return null;
+  }
+}
+
+function avisar(relatorio) {
+  try {
+    UrlFetchApp.fetch(RELATORIO, {
+      method: 'post',
+      contentType: 'application/json',
+      payload: JSON.stringify(relatorio),
+      muteHttpExceptions: true,
+    });
+  } catch (e) {
+    Logger.log('Não consegui avisar o rastreador: ' + e);
+  }
 }

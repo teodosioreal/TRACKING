@@ -7,6 +7,7 @@ import { openDb, getSetting, setSetting } from './src/db.js'
 import { recordClick, recordOutbound, recordPing, recordPostback, exportGoogleAdsCsv } from './src/tracking.js'
 import { dashboard, timeSeries, visitors, salesList, originBreakdown, PERIODS } from './src/stats.js'
 import { checkHttps } from './src/health.js'
+import { parseScriptReport } from './src/report.js'
 import {
   isValidPid,
   parseProductForm,
@@ -95,7 +96,10 @@ async function refreshHealth() {
 }
 const trackerJs = readFileSync(join(here, 'public', 't.js'), 'utf8')
 const adsScript = readFileSync(join(here, 'deploy', 'google-ads-script.js'), 'utf8')
-const adsScriptFor = (base) => adsScript.replace('__PLANILHA__', `${base}/google-ads.csv?key=${cfg.secretKey}&dias=3`)
+const adsScriptFor = (base) =>
+  adsScript
+    .replace('__PLANILHA__', `${base}/google-ads.csv?key=${cfg.secretKey}&dias=3`)
+    .replace('__RELATORIO__', `${base}/script-relatorio?key=${cfg.secretKey}`)
 
 // Nome usado nas vendas cujas visitas não têm produto. Editável em Configurações;
 // o CONVERSION_NAME do .env é só o valor inicial.
@@ -324,6 +328,23 @@ async function handlePublic(req, res, url) {
     send(res, 200, method === 'HEAD' ? '' : csv, 'text/csv; charset=utf-8', {
       'Content-Disposition': 'inline; filename="google-ads-conversoes.csv"',
     })
+    return true
+  }
+
+  // O script do Google Ads conta quantas vendas enviou (ou o erro).
+  if (path === '/script-relatorio' && method === 'POST') {
+    if (!safeEqual(url.searchParams.get('key') || '', cfg.secretKey)) {
+      send(res, 403, 'chave inválida')
+      return true
+    }
+    const report = parseScriptReport(await readBody(req))
+    if (!report) {
+      send(res, 400, 'relatório inválido')
+      return true
+    }
+    setSetting(db, 'script_report', report)
+    console.log(`[script] ${report.erro ? `erro: ${report.erro}` : `${report.enviadas} venda(s) enviada(s)`}${report.conta ? ` conta=${report.conta.id}` : ''}`)
+    send(res, 200, 'ok')
     return true
   }
 
@@ -583,6 +604,7 @@ async function handleAdmin(req, res, url) {
             ? { text: 'Nome inválido: não pode ficar vazio nem passar de 100 caracteres.', bad: true }
             : null,
         csvFetch: getSetting(db, 'csv_fetch:all'),
+        scriptReport: getSetting(db, 'script_report'),
         tz: cfg.tz,
         adsScript: adsScriptFor(baseUrl(req)),
       }),

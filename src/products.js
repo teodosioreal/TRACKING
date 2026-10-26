@@ -213,6 +213,7 @@ export function productStatus(db, product) {
     anyPostback: anyPostback || null,
     salesForGoogle: pendingForGoogle,
     csvFetch: getSetting(db, `csv_fetch:${product.id}`) || getSetting(db, 'csv_fetch:all'),
+    scriptReport: getSetting(db, 'script_report'),
   }
 }
 
