@@ -93,7 +93,27 @@ export function recordPing(db, { pid, url, links, test }, now = new Date()) {
             last_test_at = CASE WHEN ? THEN ? ELSE last_test_at END
       WHERE id = ?`,
   ).run(now.toISOString(), clip(url, 2000), n, test ? 1 : 0, now.toISOString(), pid)
+  const page = pageKey(url)
+  if (page) {
+    db.prepare(
+      `INSERT INTO page_pings (product_id, page, url, last_at, links, test_at) VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(product_id, page) DO UPDATE SET url = excluded.url, last_at = excluded.last_at,
+         links = excluded.links, test_at = COALESCE(excluded.test_at, page_pings.test_at)`,
+    ).run(pid, page, clip(url, 2000), now.toISOString(), n, test ? now.toISOString() : null)
+  }
   return true
+}
+
+// "https://site.com/pagina/" (sem parâmetros e sem barra final), para juntar
+// os sinais da mesma página vindos com gclid, utm etc.
+export function pageKey(url) {
+  try {
+    const u = new URL(url)
+    if (!/^https?:$/.test(u.protocol)) return null
+    return clip(`${u.origin}${u.pathname.replace(/\/+$/, '')}`.toLowerCase(), 500)
+  } catch {
+    return null
+  }
 }
 
 const TEST_RE = /^(teste|test)$/i

@@ -35,6 +35,10 @@ export function parseProductForm(form) {
   const conversionName = String(form.get('conversion_name') || '').trim()
   const reviewUrl = String(form.get('review_url') || '').trim()
   const affiliateUrl = String(form.get('affiliate_url') || '').trim()
+  const extraUrls = String(form.get('extra_urls') || '')
+    .split(/[\s,]+/)
+    .map((u) => u.trim())
+    .filter(Boolean)
   const param = String(form.get('tracking_param') || '').trim()
   const errors = {}
 
@@ -59,6 +63,15 @@ export function parseProductForm(form) {
       errors.affiliate_url = 'Link inválido. Cole o link de afiliado completo, começando com https://'
     }
   }
+  const badExtra = extraUrls.find((u) => {
+    try {
+      return !/^https?:$/.test(new URL(u).protocol)
+    } catch {
+      return true
+    }
+  })
+  if (badExtra) errors.extra_urls = `Endereço inválido: ${badExtra.slice(0, 80)}`
+  else if (extraUrls.length > 20) errors.extra_urls = 'No máximo 20 páginas.'
   const values = {
     name,
     platform,
@@ -67,6 +80,7 @@ export function parseProductForm(form) {
     affiliate_url: affiliateUrl || null,
     // Vazio ou igual ao padrão da plataforma: guarda nulo e segue o padrão.
     tracking_param: param && param !== DEFAULT_PARAM[platform] ? param : null,
+    extra_urls: [...new Set(extraUrls)].filter((u) => u !== reviewUrl).join('\n') || null,
   }
   return Object.keys(errors).length ? { errors, values } : { values }
 }
@@ -74,8 +88,8 @@ export function parseProductForm(form) {
 export function createProduct(db, values, now = new Date()) {
   const id = newPid()
   db.prepare(
-    `INSERT INTO products (id, name, platform, conversion_name, review_url, affiliate_url, tracking_param, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO products (id, name, platform, conversion_name, review_url, affiliate_url, tracking_param, extra_urls, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     id,
     values.name,
@@ -84,6 +98,7 @@ export function createProduct(db, values, now = new Date()) {
     values.review_url,
     values.affiliate_url,
     values.tracking_param,
+    values.extra_urls,
     now.toISOString(),
   )
   return id
@@ -91,9 +106,19 @@ export function createProduct(db, values, now = new Date()) {
 
 export function updateProduct(db, id, values) {
   db.prepare(
-    `UPDATE products SET name = ?, platform = ?, conversion_name = ?, review_url = ?, affiliate_url = ?, tracking_param = ?
+    `UPDATE products SET name = ?, platform = ?, conversion_name = ?, review_url = ?, affiliate_url = ?, tracking_param = ?,
+            extra_urls = ?
       WHERE id = ?`,
-  ).run(values.name, values.platform, values.conversion_name, values.review_url, values.affiliate_url, values.tracking_param, id)
+  ).run(
+    values.name,
+    values.platform,
+    values.conversion_name,
+    values.review_url,
+    values.affiliate_url,
+    values.tracking_param,
+    values.extra_urls,
+    id,
+  )
 }
 
 export function setConversionName(db, id, name) {
@@ -272,4 +297,15 @@ export function deleteProduct(db, id) {
 // Exclui uma venda/postback (ex.: teste que entrou como venda).
 export function deleteConversion(db, id) {
   return db.prepare('DELETE FROM conversions WHERE id = ?').run(id).changes > 0
+}
+
+// Todas as páginas cadastradas do produto: a principal e as outras.
+export function productPages(product) {
+  const extra = String(product?.extra_urls || '').split('\n').filter(Boolean)
+  return [...new Set([product?.review_url, ...extra].filter(Boolean))]
+}
+
+// Páginas em que o script do produto deu sinal, mais recente primeiro.
+export function pagePings(db, productId) {
+  return db.prepare('SELECT * FROM page_pings WHERE product_id = ? ORDER BY last_at DESC').all(productId)
 }

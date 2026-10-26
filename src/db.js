@@ -68,6 +68,18 @@ export function openDb(path) {
     CREATE INDEX IF NOT EXISTS conversions_created ON conversions(created_at);
     CREATE INDEX IF NOT EXISTS conversions_subid ON conversions(subid);
 
+    -- Último sinal do script em cada página (o mesmo produto pode estar em
+    -- vários domínios/páginas).
+    CREATE TABLE IF NOT EXISTS page_pings (
+      product_id TEXT NOT NULL,
+      page       TEXT NOT NULL, -- origem + caminho, sem parâmetros
+      url        TEXT,
+      last_at    TEXT NOT NULL,
+      links      INTEGER,
+      test_at    TEXT,
+      PRIMARY KEY (product_id, page)
+    );
+
     -- Imagem do produto (guardada no banco para entrar no backup).
     CREATE TABLE IF NOT EXISTS product_images (
       product_id TEXT PRIMARY KEY,
@@ -97,6 +109,7 @@ export function openDb(path) {
   const pcols = new Set(db.prepare('PRAGMA table_info(products)').all().map((c) => c.name))
   if (!pcols.has('affiliate_url')) db.exec('ALTER TABLE products ADD COLUMN affiliate_url TEXT')
   if (!pcols.has('tracking_param')) db.exec('ALTER TABLE products ADD COLUMN tracking_param TEXT')
+  if (!pcols.has('extra_urls')) db.exec('ALTER TABLE products ADD COLUMN extra_urls TEXT')
 
   // Uma vez: testes da BuyGoods gravados como venda antes da regra "comissão 0
   // sem ID da visita = teste" passam a ser teste.

@@ -31,6 +31,7 @@ test('formulário valida nome, conversão e endereço', () => {
     review_url: 'https://site.com/r',
     affiliate_url: null,
     tracking_param: null,
+    extra_urls: null,
   })
   assert.ok(parseProductForm(form({ name: 'X', conversion_name: 'Y', affiliate_url: 'getnervecalm' })).errors.affiliate_url)
   assert.ok(parseProductForm(form({ name: 'X', conversion_name: 'Y', platform: 'clickbank' })).errors.platform)
@@ -223,4 +224,24 @@ test('teste da plataforma não vira venda e conta como postback funcionando', as
   assert.equal(markConversionAsTest(db, id), true)
   assert.equal(dashboard(db, 'tudo', 'America/Sao_Paulo').totals.vendas, 0)
   void a
+})
+
+test('várias páginas por produto e sinal do script por página', async () => {
+  const { pageKey } = await import('../src/tracking.js')
+  const { productPages, pagePings } = await import('../src/products.js')
+  assert.equal(pageKey('https://Site.com/Review/?gclid=x&utm=y'), 'https://site.com/review')
+  assert.equal(pageKey('javascript:alert(1)'), null)
+  const v = parseProductForm(
+    form({ name: 'N', conversion_name: 'C', review_url: 'https://a.com/r', extra_urls: 'https://b.com/lista\nhttps://a.com/r\n\nhttps://c.com/x' }),
+  ).values
+  assert.equal(v.extra_urls, 'https://b.com/lista\nhttps://c.com/x')
+  assert.ok(parseProductForm(form({ name: 'N', conversion_name: 'C', extra_urls: 'b.com/lista' })).errors.extra_urls)
+  const db = openDb(':memory:')
+  const id = createProduct(db, v)
+  assert.deepEqual(productPages(getProduct(db, id)), ['https://a.com/r', 'https://b.com/lista', 'https://c.com/x'])
+  recordPing(db, { pid: id, url: 'https://a.com/r?gclid=1', links: 3 })
+  recordPing(db, { pid: id, url: 'https://b.com/lista', links: 0 })
+  recordPing(db, { pid: id, url: 'https://a.com/r/?utm=2', links: 4 })
+  const pings = Object.fromEntries(pagePings(db, id).map((r) => [r.page, r.links]))
+  assert.deepEqual(pings, { 'https://a.com/r': 4, 'https://b.com/lista': 0 })
 })

@@ -4,7 +4,7 @@ import { timingSafeEqual } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { openDb, getSetting, setSetting } from './src/db.js'
-import { recordClick, recordOutbound, recordPing, recordPostback, exportGoogleAdsCsv } from './src/tracking.js'
+import { recordClick, recordOutbound, recordPing, recordPostback, exportGoogleAdsCsv, pageKey } from './src/tracking.js'
 import { dashboard, timeSeries, visitors, salesList, originBreakdown, PERIODS } from './src/stats.js'
 import { checkHttps } from './src/health.js'
 import { parseScriptReport } from './src/report.js'
@@ -26,6 +26,8 @@ import {
   removeImage,
   setupProgress,
   recentPostbacks,
+  productPages,
+  pagePings,
   lastPostbackEvent,
   lastPostbackSignal,
   deleteConversion,
@@ -439,6 +441,7 @@ async function handleAdmin(req, res, url) {
         totals,
         postbacks: tab === 'buygoods' ? recentPostbacks(db, 10) : [],
         image: img ? { updated_at: img.updated_at } : null,
+        pings: tab === 'script' ? pagePings(db, product.id) : [],
         ...extra,
       })
     }
@@ -486,12 +489,21 @@ async function handleAdmin(req, res, url) {
     }
 
     if (action === 'sinal' && method === 'GET') {
-      const body = { pingAt: product.last_ping_at, links: product.last_ping_links, https: getHealth() }
+      // Com ?pagina=, o sinal daquela página; sem, o último sinal de qualquer página.
+      const key = pageKey(url.searchParams.get('pagina') || '')
+      const ping = key ? db.prepare('SELECT last_at, links FROM page_pings WHERE product_id = ? AND page = ?').get(product.id, key) : null
+      const body = key
+        ? { pingAt: ping?.last_at || null, links: ping?.links ?? null, https: getHealth() }
+        : { pingAt: product.last_ping_at, links: product.last_ping_links, https: getHealth() }
       return send(res, 200, JSON.stringify(body), 'application/json; charset=utf-8')
     }
 
     if (action === 'verificar' && method === 'GET') {
-      const r = await checkPage(product, fetch, cfg.publicUrl.replace(/^https?:\/\//, ''))
+      // Só verifica páginas cadastradas no produto (não vira um "abrir qualquer URL").
+      const pages = productPages(product)
+      const wanted = url.searchParams.get('pagina')
+      const page = pages.includes(wanted) ? wanted : pages[0]
+      const r = await checkPage({ ...product, review_url: page }, fetch, cfg.publicUrl.replace(/^https?:\/\//, ''))
       return send(res, 200, JSON.stringify({ html: r }), 'application/json; charset=utf-8')
     }
 

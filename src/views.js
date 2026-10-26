@@ -1,6 +1,6 @@
 // HTML do painel, renderizado no servidor.
 import { PERIODS } from './stats.js'
-import { PLATFORMS, DEFAULT_PARAM, trackingParam } from './products.js'
+import { PLATFORMS, DEFAULT_PARAM, trackingParam, productPages } from './products.js'
 import { SOURCES, uaInfo, referrerHost } from './source.js'
 
 export const esc = (v) =>
@@ -459,6 +459,8 @@ export function productFormPage({ product, values, errors = {}, defaultConversio
 <div class="hint">É o nome que você vai dar para a ação de conversão no Google Ads. Tem que ser <b>idêntico</b> lá e aqui (maiúsculas, espaços e acentos contam).</div>${err('conversion_name')}</label>
 <label><b>Endereço da página de review</b> <span class="muted">(usado no teste de instalação)</span>
 <input type="url" name="review_url" value="${esc(v.review_url)}" placeholder="https://meusite.com/produto-review">${err('review_url')}</label>
+<label><b>Outras páginas</b> <span class="muted">(opcional: outros domínios/páginas onde vai o mesmo script, uma por linha)</span>
+<textarea name="extra_urls" rows="3" style="font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--text);width:100%" placeholder="https://outrodominio.com/lista-top5">${esc(v.extra_urls || '')}</textarea>${err('extra_urls')}</label>
 <label><b>Link de afiliado da BuyGoods</b> <span class="muted">(o link do botão de compra)</span>
 <input type="url" name="affiliate_url" value="${esc(v.affiliate_url)}" placeholder="https://siteDoProduto.com/dtc/?aff_id=123456">
 <div class="hint">O link que a BuyGoods te dá costuma ir para o site do produtor (ex.: <code>getnervecalm.com/...?aff_id=...</code>). O script reconhece esse domínio e coloca o ID da visita no <code>subid</code>.</div>${err('affiliate_url')}</label>
@@ -591,15 +593,13 @@ export const PRODUCT_TABS = {
 
 const BUYGOODS = 'https://backoffice.buygoods.com'
 
-export function productPage(product, st, { base, key, tz, currency, flash, tab, progress, totals, postbacks, image, errors, values, adsScript = '' }) {
+export function productPage(product, st, { base, key, tz, currency, flash, tab, progress, totals, postbacks, image, errors, values, adsScript = '', pings = [] }) {
   const pid = esc(product.id)
   const script = `<script src="${base}/t.js?p=${product.id}" async></script>`
   const postback = `${base}/postback?key=${key}&subid={SUBID}&order={ORDERID}&amount={COMMISSION_AMOUNT}&type={CONV_TYPE}&product={PRODUCT_CODENAME}`
   const csv = `${base}/google-ads.csv?key=${key}&produto=${product.id}`
   const suffix = 'campaignid={campaignid}&adgroupid={adgroupid}&keyword={keyword}&matchtype={matchtype}&device={device}&network={network}'
-  const testUrl = product.review_url
-    ? product.review_url + (product.review_url.includes('?') ? '&' : '?') + 'rt_teste=1'
-    : ''
+  const pages = productPages(product)
   const flashHtml = flash ? `<div class="flash ${flash.bad ? 'bad' : ''}">${esc(flash.text)}</div>` : ''
   const tabDone = { script: progress.steps[0].done && progress.steps[1].done, buygoods: progress.steps[2].done, google: progress.steps[3].done }
   const platformName = PLATFORMS[product.platform] || 'Plataforma'
@@ -647,13 +647,27 @@ ${copy('script', script, 'Copiar script')}
 
 <section><h3><span class="num">3</span> Teste</h3><div class="box">
 ${
-  testUrl
-    ? `<p>Clique em <b>Testar instalação</b>: sua página abre numa aba nova e, em poucos segundos, aparece aqui se funcionou.</p>
-<div class="actions"><button type="button" class="primary" id="test-install" data-url="${esc(testUrl)}">Testar instalação</button>
+  pages.length
+    ? `<p>Clique em <b>Testar instalação</b>: a página abre numa aba nova e, em poucos segundos, aparece aqui se funcionou.${pages.length > 1 ? ' Teste cada página/domínio onde você colou o script.' : ''}</p>
+${pages.length > 1 ? `<label style="display:block;max-width:640px;margin-bottom:8px"><b>Página para testar</b><select id="test-page">${pages.map((u) => `<option value="${esc(u)}">${esc(u)}</option>`).join('')}</select></label>` : `<input type="hidden" id="test-page" value="${esc(pages[0])}">`}
+<div class="actions"><button type="button" class="primary" id="test-install">Testar instalação</button>
 <button type="button" id="verify">Verificar o código da página</button></div>`
     : `<p>Informe o endereço da página de review para poder testar.</p><a class="btn primary" href="/produtos/${pid}?aba=config">Informar endereço</a>`
 }
 <div id="test-status"></div><div id="verify-result"></div>
+${
+  pings.length
+    ? `<h4 style="margin:16px 0 6px">Páginas onde o script já deu sinal</h4>${table(
+        [
+          { label: 'Página', html: (r) => `<a href="${esc(r.page)}" target="_blank" rel="noopener">${esc(r.page.replace(/^https?:\/\//, ''))}</a>` },
+          { label: 'Último sinal', html: (r) => `${ago(r.last_at)}<span class="sub2">${esc(when(r.last_at, tz))}</span>` },
+          { label: 'Links de afiliado', html: (r) => (r.links > 0 ? `<span class="tag ok">${r.links}</span>` : '<span class="tag bad">0 — não achou o botão</span>') },
+        ],
+        pings,
+        '',
+      )}`
+    : ''
+}
 <p class="muted" style="margin-top:12px">O script reconhece sozinho o link de afiliado: o domínio do link cadastrado em Configurações${product.affiliate_url ? ` (<b>${esc(product.affiliate_url.replace(/^https?:\/\//, '').split('/')[0])}</b>)` : ''}, links com <code>aff_id=</code> (formato da BuyGoods) e links para buygoods. Ele coloca o ID da visita no parâmetro <code>${esc(param)}</code>${param === 'subid' ? '; se o link já tinha um subid fixo (ex.: <code>adsgoogle</code>), esse valor passa para o <code>subid2</code>' : ''}. Link encurtado: coloque <code>data-rastrear</code> nele.</p>
 </div></section>`
   } else if (tab === 'buygoods' && !isBuyGoods) {
@@ -788,6 +802,8 @@ ${copy('suffix', suffix)}</li>
 <label><b>Plataforma</b><select name="platform">${platformOptions}</select>${err('platform')}</label>
 <label><b>Nome da conversão no Google Ads</b><input type="text" name="conversion_name" value="${esc(v.conversion_name)}" required maxlength="100">${err('conversion_name')}</label>
 <label><b>Endereço da página de review</b><input type="url" name="review_url" value="${esc(v.review_url)}" placeholder="https://meusite.com/produto-review">${err('review_url')}</label>
+<label><b>Outras páginas</b> <span class="muted">(outros domínios/páginas onde vai o mesmo script, uma por linha; servem para testar)</span>
+<textarea name="extra_urls" rows="3" style="font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--text);width:100%" placeholder="https://outrodominio.com/lista-top5">${esc(v.extra_urls || '')}</textarea>${err('extra_urls')}</label>
 <label><b>Link de afiliado da BuyGoods</b><input type="url" name="affiliate_url" value="${esc(v.affiliate_url)}" placeholder="https://siteDoProduto.com/dtc/?aff_id=123456">
 <div class="hint">O link do botão de compra. O script reconhece o domínio dele e coloca o ID da visita no <code>${esc(trackingParam(product))}</code>.</div>${err('affiliate_url')}</label>
 <details class="howto"><summary>Avançado: parâmetro do ID da visita</summary>
@@ -839,10 +855,11 @@ if(!data.startsWith('data:image/webp'))data=c.toDataURL('image/jpeg',0.85);
 const r=await fetch('/produtos/'+pid+'/imagem',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({data})});
 const j=await r.json();if(!r.ok)throw new Error(j.error||'erro');location.reload()}catch(e){alert('Não consegui enviar a imagem: '+e.message)}});
 const tb=document.getElementById('test-install');
-if(tb)tb.addEventListener('click',()=>{window.open(tb.dataset.url,'_blank','noopener');
+if(tb)tb.addEventListener('click',()=>{const page=document.getElementById('test-page').value;
+window.open(page+(page.includes('?')?'&':'?')+'rt_teste=1','_blank','noopener');
 const out=document.getElementById('test-status'),t0=Date.now();let timer;
 const tick=async()=>{const secs=Math.round((Date.now()-t0)/1000);
-try{const r=await(await fetch('/produtos/'+pid+'/sinal')).json();
+try{const r=await(await fetch('/produtos/'+pid+'/sinal?pagina='+encodeURIComponent(page))).json();
 if(r.pingAt&&new Date(r.pingAt).getTime()>=t0-3000){clearInterval(timer);
 out.innerHTML=r.links>0?'<span class="ok"><b>✓ Funcionou!</b> O script está rodando na página e marcou '+r.links+' link(s) de afiliado.</span>'
 :'<span class="bad"><b>! O script está rodando, mas não achou o link de afiliado.</b> Cadastre o link de afiliado na aba Configurações ou coloque data-rastrear no link de compra.</span>';return}
@@ -857,7 +874,7 @@ out.innerHTML='<span class="muted">Aguardando sinal da página… '+secs+'s (dei
 tick();timer=setInterval(tick,2000)});
 const vb=document.getElementById('verify');
 if(vb)vb.addEventListener('click',async()=>{const out=document.getElementById('verify-result');out.textContent='Verificando…';
-try{const r=await(await fetch('/produtos/'+pid+'/verificar')).json();out.innerHTML=r.html}catch(e){out.textContent='Não consegui verificar agora.'}});
+try{const tp=document.getElementById('test-page');const r=await(await fetch('/produtos/'+pid+'/verificar'+(tp?'?pagina='+encodeURIComponent(tp.value):''))).json();out.innerHTML=r.html}catch(e){out.textContent='Não consegui verificar agora.'}});
 `,
   )
 }
