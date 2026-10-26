@@ -1,0 +1,145 @@
+// Regras de negócio: registrar visita, clique no botão, venda e gerar a
+// planilha do Google Ads. Sem HTTP aqui, para dar para testar isolado.
+
+const CID_RE = /^[A-Za-z0-9_-]{6,64}$/
+
+// Campos da URL de chegada que guardamos. A chave é o nome da coluna.
+const URL_FIELDS = {
+  gclid: ['gclid'],
+  gbraid: ['gbraid'],
+  wbraid: ['wbraid'],
+  campaign_id: ['campaignid', 'campaign_id', 'utm_id'],
+  adgroup_id: ['adgroupid', 'adgroup_id'],
+  keyword: ['keyword'],
+  matchtype: ['matchtype'],
+  device: ['device'],
+  network: ['network'],
+  utm_source: ['utm_source'],
+  utm_medium: ['utm_medium'],
+  utm_campaign: ['utm_campaign'],
+  utm_content: ['utm_content'],
+  utm_term: ['utm_term'],
+}
+
+const clip = (v, max = 500) => (v == null ? null : String(v).slice(0, max))
+
+// "{SUBID}" que a BuyGoods não substituiu conta como vazio.
+function clean(v) {
+  if (v == null) return null
+  const s = String(v).trim()
+  if (!s || /^\{.*\}$/.test(s) || /^--.*--$/.test(s)) return null
+  return s
+}
+
+function pick(params, names) {
+  for (const n of names) {
+    const v = clean(params.get(n))
+    if (v) return v
+  }
+  return null
+}
+
+export function isValidCid(cid) {
+  return typeof cid === 'string' && CID_RE.test(cid)
+}
+
+export function recordClick(db, { cid, url, referrer, ip, userAgent }, now = new Date()) {
+  if (!isValidCid(cid)) return false
+  let params = new URLSearchParams()
+  try {
+    params = new URL(url).searchParams
+  } catch {}
+  const row = { id: cid, created_at: now.toISOString() }
+  for (const [col, names] of Object.entries(URL_FIELDS)) row[col] = clip(pick(params, names))
+  row.landing_url = clip(url, 2000)
+  row.referrer = clip(referrer, 1000)
+  row.ip = clip(ip, 100)
+  row.user_agent = clip(userAgent, 500)
+
+  const cols = Object.keys(row)
+  // Recarregar a página manda o mesmo cid de novo: mantém o primeiro registro.
+  const res = db
+    .prepare(`INSERT OR IGNORE INTO clicks (${cols.join(',')}) VALUES (${cols.map(() => '?').join(',')})`)
+    .run(...cols.map((c) => row[c]))
+  return res.changes > 0
+}
+
+export function recordOutbound(db, cid, now = new Date()) {
+  if (!isValidCid(cid)) return false
+  const res = db
+    .prepare(
+      `UPDATE clicks SET outbound_at = COALESCE(outbound_at, ?), outbound_count = outbound_count + 1 WHERE id = ?`,
+    )
+    .run(now.toISOString(), cid)
+  return res.changes > 0
+}
+
+const REFUND_RE = /refund|chargeback|cancel|reembolso|estorno/i
+
+// Postback da BuyGoods. Aceita vários nomes de parâmetro para não depender
+// de um formato só.
+export function recordPostback(db, params, now = new Date()) {
+  const subid = pick(params, ['subid', 'clickid', 'click_id', 'cid', 's1'])
+  const orderId = pick(params, ['order', 'orderid', 'order_id', 'transaction', 'eventid'])
+  const type = pick(params, ['type', 'conv_type', 'event']) || 'sale'
+  const amountRaw = pick(params, ['amount', 'commission', 'payout', 'valor', 'sum'])
+  const amount = Number.parseFloat(String(amountRaw ?? '0').replace(',', '.')) || 0
+  const product = pick(params, ['product', 'produto', 'product_codename'])
+  const isRefund = REFUND_RE.test(type)
+
+  const res = db
+    .prepare(
+      `INSERT OR IGNORE INTO conversions (created_at, subid, order_id, type, amount, product, status, raw)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      now.toISOString(),
+      clip(subid, 100),
+      clip(orderId, 100),
+      clip(type, 50),
+      isRefund ? -Math.abs(amount) : amount,
+      clip(product, 200),
+      isRefund ? 'refund' : 'approved',
+      clip(params.toString(), 2000),
+    )
+
+  if (isRefund && orderId) {
+    db.prepare(`UPDATE conversions SET status = 'refunded' WHERE order_id = ? AND status = 'approved'`).run(orderId)
+  }
+  return { duplicate: res.changes === 0, refund: isRefund, subid, orderId, amount, type }
+}
+
+// "2026-10-26 15:04:05+0000" — formato aceito pelo Google Ads.
+export function googleTime(iso) {
+  return iso.slice(0, 19).replace('T', ' ') + '+0000'
+}
+
+function csvCell(v) {
+  const s = v == null ? '' : String(v)
+  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+}
+
+// Planilha de conversões offline no modelo "Google Click ID" do Google Ads.
+// Só entram vendas aprovadas que vieram de um clique com gclid.
+export function exportGoogleAdsCsv(db, { conversionName, currency, days }, now = new Date()) {
+  const since = new Date(now.getTime() - days * 86400000).toISOString()
+  const rows = db
+    .prepare(
+      `SELECT c.gclid, v.created_at, v.amount
+         FROM conversions v JOIN clicks c ON c.id = v.subid
+        WHERE v.status = 'approved' AND c.gclid IS NOT NULL AND v.created_at >= ?
+        ORDER BY v.created_at`,
+    )
+    .all(since)
+
+  const lines = [
+    'Parameters:TimeZone=+0000',
+    'Google Click ID,Conversion Name,Conversion Time,Conversion Value,Conversion Currency',
+  ]
+  for (const r of rows) {
+    lines.push(
+      [r.gclid, conversionName, googleTime(r.created_at), r.amount.toFixed(2), currency].map(csvCell).join(','),
+    )
+  }
+  return lines.join('\r\n') + '\r\n'
+}
