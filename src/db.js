@@ -1,7 +1,7 @@
 import { DatabaseSync } from 'node:sqlite'
 import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
-import { classifySource } from './source.js'
+import { classifySource, pageKey } from './source.js'
 
 export function openDb(path) {
   if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true })
@@ -104,6 +104,12 @@ export function openDb(path) {
     db.exec('ALTER TABLE clicks ADD COLUMN source TEXT')
     const upd = db.prepare('UPDATE clicks SET source = ? WHERE id = ?')
     for (const r of db.prepare('SELECT * FROM clicks').all()) upd.run(classifySource(r), r.id)
+  }
+  if (!cols.has('page')) {
+    // Página de entrada sem parâmetros (para a taxa de passagem por página).
+    db.exec('ALTER TABLE clicks ADD COLUMN page TEXT')
+    const upd = db.prepare('UPDATE clicks SET page = ? WHERE id = ?')
+    for (const r of db.prepare('SELECT id, landing_url FROM clicks').all()) upd.run(pageKey(r.landing_url), r.id)
   }
   db.exec('CREATE INDEX IF NOT EXISTS clicks_product ON clicks(product_id, created_at)')
   const pcols = new Set(db.prepare('PRAGMA table_info(products)').all().map((c) => c.name))

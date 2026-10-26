@@ -52,6 +52,7 @@ const CAMPAIGN = `COALESCE(NULLIF(c.utm_campaign,''), NULLIF(c.campaign_id,''),
   CASE WHEN c.id IS NULL THEN '(venda sem clique)'
        WHEN c.gclid IS NOT NULL THEN '(google, sem campaignid)'
        ELSE '(direto / orgânico)' END)`
+const PAGE = `COALESCE(c.page, CASE WHEN c.id IS NULL THEN '(venda sem clique)' ELSE '(página desconhecida)' END)`
 const KEYWORD = `COALESCE(NULLIF(c.keyword,''), NULLIF(c.utm_term,''),
   CASE WHEN c.id IS NULL THEN '(venda sem clique)' ELSE '(sem palavra-chave)' END)`
 
@@ -143,6 +144,7 @@ export function dashboard(db, period, tz, now = new Date(), productId = null, tr
       reembolsos: s.reembolsos || 0,
     },
     campaigns: breakdown(db, CAMPAIGN, from, to, 50, sc),
+    pages: breakdown(db, PAGE, from, to, 50, sc),
     keywords: breakdown(db, KEYWORD, from, to, 30, sc),
     recentSales,
     recentClicks,

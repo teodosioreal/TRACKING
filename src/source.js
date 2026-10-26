@@ -67,3 +67,15 @@ export function uaInfo(ua = '') {
   const bot = /bot|crawl|spider|slurp|headless|lighthouse|preview/i.test(s)
   return { device, os, browser, bot }
 }
+
+// "https://site.com/pagina" (sem parâmetros e sem barra final), para juntar a
+// mesma página vinda com gclid, utm etc.
+export function pageKey(url) {
+  try {
+    const u = new URL(url)
+    if (!/^https?:$/.test(u.protocol)) return null
+    return `${u.origin}${u.pathname.replace(/\/+$/, '')}`.toLowerCase().slice(0, 500)
+  } catch {
+    return null
+  }
+}

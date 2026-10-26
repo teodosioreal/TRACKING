@@ -118,3 +118,42 @@ test('filtro Pago / Não pago separa visitas, vendas, gráfico e origem', async 
   const camp = dashboard(db, 'hoje', tz, now, null, 'pago').campaigns
   assert.deepEqual(camp.map((c) => c.label), ['1'])
 })
+
+test('taxa de passagem por página (visitas, cliques p/ oferta, vendas)', async () => {
+  const { dashboard } = await import('../src/stats.js')
+  const { recordOutbound } = await import('../src/tracking.js')
+  const db = openDb(':memory:')
+  const now = new Date('2026-10-26T15:00:00Z')
+  const a = 'https://site.com/review-a'
+  const b = 'https://outro.com/lista'
+  // review-a: 4 visitas (gclid diferentes, mesma página), 2 clicam, 1 compra
+  for (let i = 1; i <= 4; i++) recordClick(db, { cid: `visitaA0${i}`, url: `${a}/?gclid=G${i}&utm=x` }, now)
+  recordOutbound(db, 'visitaA01', now)
+  recordOutbound(db, 'visitaA02', now)
+  recordPostback(db, new URLSearchParams('subid=visitaA01&order=1&amount=40'), now)
+  // lista: 2 visitas orgânicas, 1 clica
+  recordClick(db, { cid: 'visitaB01', url: b, referrer: 'https://google.com/' }, now)
+  recordClick(db, { cid: 'visitaB02', url: b, referrer: 'https://google.com/' }, now)
+  recordOutbound(db, 'visitaB02', now)
+  const pages = Object.fromEntries(dashboard(db, 'hoje', 'America/Sao_Paulo', now).pages.map((p) => [p.label, p]))
+  assert.deepEqual(pages['https://site.com/review-a'], { label: 'https://site.com/review-a', visitas: 4, cliques: 2, vendas: 1, comissao: 40 })
+  assert.deepEqual(pages['https://outro.com/lista'], { label: 'https://outro.com/lista', visitas: 2, cliques: 1, vendas: 0, comissao: 0 })
+  // filtro Pago deixa só a página paga
+  assert.deepEqual(dashboard(db, 'hoje', 'America/Sao_Paulo', now, null, 'pago').pages.map((p) => p.label), ['https://site.com/review-a'])
+})
+
+test('visitas antigas ganham a página na migração', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'trk-'))
+  const path = join(dir, 'old.db')
+  const old = new DatabaseSync(path)
+  old.exec(`CREATE TABLE clicks (id TEXT PRIMARY KEY, created_at TEXT NOT NULL, gclid TEXT, gbraid TEXT, wbraid TEXT,
+    campaign_id TEXT, adgroup_id TEXT, keyword TEXT, matchtype TEXT, device TEXT, network TEXT, utm_source TEXT,
+    utm_medium TEXT, utm_campaign TEXT, utm_content TEXT, utm_term TEXT, landing_url TEXT, referrer TEXT, ip TEXT,
+    user_agent TEXT, outbound_at TEXT, outbound_count INTEGER NOT NULL DEFAULT 0);
+    INSERT INTO clicks (id, created_at, landing_url) VALUES ('antiga01', '2026-10-26T10:00:00.000Z', 'https://R.com/Review/?gclid=1');`)
+  old.close()
+  const db = openDb(path)
+  assert.equal(db.prepare("SELECT page FROM clicks WHERE id='antiga01'").get().page, 'https://r.com/review')
+  db.close()
+  rmSync(dir, { recursive: true })
+})

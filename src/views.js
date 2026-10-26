@@ -245,13 +245,32 @@ function table(cols, rows, empty) {
   return `<div class="scroll"><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`
 }
 
-function breakdownTable(rows, firstLabel, cur) {
+// Taxa de passagem (visitas que clicaram para a oferta), com cor de referência.
+// Abaixo de 30 visitas a amostra é pequena demais para julgar.
+const PASS_GOOD = 0.3
+const PASS_OK = 0.15
+function passTag(cliques, visitas) {
+  if (!visitas) return '<span class="muted">—</span>'
+  const rate = cliques / visitas
+  const txt = pct(cliques, visitas)
+  if (visitas < 30) return `<span class="muted" title="Poucas visitas para julgar">${txt}</span>`
+  const [cls, label] = rate >= PASS_GOOD ? ['ok', 'boa'] : rate >= PASS_OK ? ['warn', 'média'] : ['bad', 'baixa']
+  return `<span class="tag ${cls}" title="Referência: 30% ou mais = boa · 15 a 30% = média · abaixo de 15% = baixa">${txt} · ${label}</span>`
+}
+
+function breakdownTable(rows, firstLabel, cur, { url = false } = {}) {
   return table(
     [
-      { label: firstLabel, html: (r) => esc(r.label) },
+      {
+        label: firstLabel,
+        html: (r) =>
+          url && /^https?:\/\//.test(r.label)
+            ? `<a href="${esc(r.label)}" target="_blank" rel="noopener">${esc(r.label.replace(/^https?:\/\//, ''))}</a>`
+            : esc(r.label),
+      },
       { label: 'Visitas', n: 1, html: (r) => r.visitas },
-      { label: 'Cliques no botão', n: 1, html: (r) => r.cliques },
-      { label: 'CTR página', n: 1, html: (r) => pct(r.cliques, r.visitas) },
+      { label: 'Cliques p/ oferta', n: 1, html: (r) => r.cliques },
+      { label: 'Taxa de passagem', n: 1, html: (r) => passTag(r.cliques, r.visitas) },
       { label: 'Vendas', n: 1, html: (r) => r.vendas },
       { label: 'Conv.', n: 1, html: (r) => pct(r.vendas, r.visitas) },
       { label: 'Comissão', n: 1, html: (r) => money(r.comissao, cur) },
@@ -336,7 +355,7 @@ function chartHtml(series, currency) {
 <details class="tbl"><summary>Ver em tabela</summary>${tbl}</details>`
 }
 
-export const TABS = { campanhas: 'Campanhas', palavras: 'Palavras-chave' }
+export const TABS = { campanhas: 'Campanhas', paginas: 'Páginas', palavras: 'Palavras-chave' }
 
 export function dashboardPage(d, { period, tz, currency, products, productId, series, tab, origins, traffic }) {
   const t = d.totals
@@ -363,6 +382,10 @@ export function dashboardPage(d, { period, tz, currency, products, productId, se
 
   let tabBody
   if (tab === 'palavras') tabBody = breakdownTable(d.keywords, 'Palavra-chave', currency)
+  else if (tab === 'paginas')
+    tabBody =
+      breakdownTable(d.pages, 'Página', currency, { url: true }) +
+      '<div class="box"><p class="muted">Taxa de passagem = visitas que clicaram para a oferta ÷ visitas da página. Referência para página de review/pressel: 30% ou mais é boa, 15 a 30% é média, abaixo de 15% vale revisar a página. Com menos de 30 visitas a amostra é pequena demais para julgar.</p></div>'
   else tabBody = breakdownTable(d.campaigns, 'Campanha', currency)
 
   const counts = {}
@@ -391,7 +414,7 @@ export function dashboardPage(d, { period, tz, currency, products, productId, se
 ${kpi('Comissão', money(t.comissao, currency), `${t.vendas} venda(s)`, 'hero')}
 ${kpi('Vendas', t.vendas, `conversão ${pct(t.vendas, t.visitas)}`)}
 ${kpi('Visitas', t.visitas, `${t.google} do Google Ads (gclid)`)}
-${kpi('Cliques no botão', t.cliques, `${pct(t.cliques, t.visitas)} das visitas`)}
+${kpi('Cliques p/ oferta', t.cliques, `taxa de passagem ${pct(t.cliques, t.visitas)}`)}
 </div>
 <div class="kpis minor">
 ${kpi('Ganho por visita (EPC)', money(epc, currency))}
@@ -610,7 +633,7 @@ export const PRODUCT_TABS = {
 
 const BUYGOODS = 'https://backoffice.buygoods.com'
 
-export function productPage(product, st, { base, key, tz, currency, flash, tab, progress, totals, postbacks, image, errors, values, adsScript = '', pings = [] }) {
+export function productPage(product, st, { base, key, tz, currency, flash, tab, progress, totals, postbacks, image, errors, values, adsScript = '', pings = [], pageStats = [] }) {
   const pid = esc(product.id)
   const script = `<script src="${base}/t.js?p=${product.id}" async></script>`
   const postback = `${base}/postback?key=${key}&subid={SUBID}&order={ORDERID}&amount={COMMISSION_AMOUNT}&type={CONV_TYPE}&product={PRODUCT_CODENAME}`
@@ -648,7 +671,10 @@ export function productPage(product, st, { base, key, tz, currency, flash, tab, 
 <section><h3>Resultados (todo o período)</h3><div class="box mini-kpis">
 <div><span>Visitas</span><b>${totals.visitas}</b></div><div><span>Vendas</span><b>${totals.vendas}</b></div><div><span>Comissão</span><b>${money(totals.comissao, currency)}</b></div>
 </div><div class="box" style="padding-top:0"><a href="/?periodo=30d&produto=${pid}">Ver no painel →</a></div></section>
-</div></div>`
+</div></div>
+<section><h3>Taxa de passagem por página <span class="right">últimos 30 dias</span></h3>
+${breakdownTable(pageStats, 'Página', currency, { url: true })}
+<div class="box"><p class="muted">Visitas que clicaram para a oferta ÷ visitas da página. Referência: 30% ou mais = boa, 15 a 30% = média, abaixo de 15% = revisar. Com menos de 30 visitas a amostra é pequena demais. <a href="/?periodo=30d&produto=${pid}&aba=paginas">Ver por período →</a></p></div></section>`
   } else if (tab === 'script') {
     body = `<section><h3><span class="num">1</span> Copie o script</h3><div class="box">
 ${copy('script', script, 'Copiar script')}

@@ -2,7 +2,7 @@
 // planilha do Google Ads. Sem HTTP aqui, para dar para testar isolado.
 
 import { isValidPid } from './products.js'
-import { classifySource } from './source.js'
+import { classifySource, pageKey } from './source.js'
 
 const CID_RE = /^[A-Za-z0-9_-]{6,64}$/
 
@@ -65,6 +65,7 @@ export function recordClick(db, { cid, pid, test, url, referrer, ip, userAgent }
   row.product_id = existingProduct(db, pid)
   row.is_test = test ? 1 : 0
   row.source = classifySource(row)
+  row.page = pageKey(url)
 
   const cols = Object.keys(row)
   // Recarregar a página manda o mesmo cid de novo: mantém o primeiro registro.
@@ -108,17 +109,7 @@ export function recordPing(db, { pid, url, links, test, candidates }, now = new 
   return true
 }
 
-// "https://site.com/pagina/" (sem parâmetros e sem barra final), para juntar
-// os sinais da mesma página vindos com gclid, utm etc.
-export function pageKey(url) {
-  try {
-    const u = new URL(url)
-    if (!/^https?:$/.test(u.protocol)) return null
-    return clip(`${u.origin}${u.pathname.replace(/\/+$/, '')}`.toLowerCase(), 500)
-  } catch {
-    return null
-  }
-}
+export { pageKey }
 
 const TEST_RE = /^(teste|test)$/i
 // Teste disparado pela plataforma (ex.: botão "Test" do postback da BuyGoods):

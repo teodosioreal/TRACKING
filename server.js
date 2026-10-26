@@ -473,6 +473,7 @@ async function handleAdmin(req, res, url) {
         postbacks: tab === 'buygoods' ? recentPostbacks(db, 15, product.id) : [],
         image: img ? { updated_at: img.updated_at } : null,
         pings: tab === 'script' ? pagePings(db, product.id) : [],
+        pageStats: tab === 'status' ? dashboard(db, '30d', cfg.tz, new Date(), product.id).pages : [],
         ...extra,
       })
     }

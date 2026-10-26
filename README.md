@@ -80,6 +80,10 @@ systemctl enable --now tracking-update.timer tracking-backup.timer
   tráfego pago (Google Ads e outros pagos) do não pago (orgânico, direto,
   referência). A escolha fica lembrada até você mudar. Vendas sem clique não
   têm origem e só aparecem em Todos.
+- **Taxa de passagem por página** (Visão geral → aba Páginas e aba Status do
+  produto): visitas que clicaram para a oferta ÷ visitas da página, com
+  referência de cor (30%+ boa, 15–30% média, <15% baixa; menos de 30 visitas
+  não é julgado). Respeita período, produto e filtro Pago/Não pago.
 - **Visitantes**: cada visita com IP, origem (Pago, Orgânico, Referência,
   Direto, Teste), produto, campanha/palavra-chave, aparelho, se clicou para
   comprar e se comprou. Opção “Ao vivo” (atualiza a cada 10 s).
