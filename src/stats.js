@@ -56,16 +56,28 @@ const KEYWORD = `COALESCE(NULLIF(c.keyword,''), NULLIF(c.utm_term,''),
   CASE WHEN c.id IS NULL THEN '(venda sem clique)' ELSE '(sem palavra-chave)' END)`
 
 // Filtro opcional por produto. "?" vira o id do produto ou NULL (todos).
-const PRODUCT_FILTER = `(? IS NULL OR c.product_id = ?)`
+// Filtro de tráfego: 'pago' (Google Ads e outros pagos) ou 'nao_pago'
+// (orgânico, referência, direto). Vendas sem clique não têm origem e só
+// aparecem sem filtro.
+export const TRAFFIC = { pago: 'Pago', nao_pago: 'Não pago' }
+const PRODUCT_FILTER = `(? IS NULL OR c.product_id = ?)
+  AND (? IS NULL OR (? = 'pago' AND c.source IN ('pago', 'pago_outro'))
+                 OR (? = 'nao_pago' AND c.source IN ('organico', 'referencia', 'direto')))`
+// Parâmetros do filtro acima, na ordem.
+const scope = (productId, traffic) => {
+  const id = productId || null
+  const tr = TRAFFIC[traffic] ? traffic : null
+  return [id, id, tr, tr, tr]
+}
 
-function breakdown(db, expr, from, to, limit, pid) {
+function breakdown(db, expr, from, to, limit, sc) {
   const visits = db
     .prepare(
       `SELECT ${expr} AS label, COUNT(*) AS visitas, SUM(c.outbound_at IS NOT NULL) AS cliques
          FROM clicks c WHERE c.is_test = 0 AND c.created_at >= ? AND c.created_at < ? AND ${PRODUCT_FILTER}
         GROUP BY label`,
     )
-    .all(from, to, pid, pid)
+    .all(from, to, ...sc)
   const sales = db
     .prepare(
       `SELECT ${expr} AS label, COUNT(*) AS vendas, SUM(v.amount) AS comissao
@@ -73,7 +85,7 @@ function breakdown(db, expr, from, to, limit, pid) {
         WHERE v.status = 'approved' AND v.created_at >= ? AND v.created_at < ? AND ${PRODUCT_FILTER}
         GROUP BY label`,
     )
-    .all(from, to, pid, pid)
+    .all(from, to, ...sc)
 
   const map = new Map()
   const get = (label) => {
@@ -85,15 +97,15 @@ function breakdown(db, expr, from, to, limit, pid) {
   return [...map.values()].sort((a, b) => b.comissao - a.comissao || b.visitas - a.visitas).slice(0, limit)
 }
 
-export function dashboard(db, period, tz, now = new Date(), productId = null) {
+export function dashboard(db, period, tz, now = new Date(), productId = null, traffic = null) {
   const [from, to] = periodRange(period, tz, now)
-  const pid = productId || null
+  const sc = scope(productId, traffic)
   const t = db
     .prepare(
       `SELECT COUNT(*) AS visitas, SUM(outbound_at IS NOT NULL) AS cliques, SUM(gclid IS NOT NULL) AS google
          FROM clicks c WHERE c.is_test = 0 AND c.created_at >= ? AND c.created_at < ? AND ${PRODUCT_FILTER}`,
     )
-    .get(from, to, pid, pid)
+    .get(from, to, ...sc)
   const s = db
     .prepare(
       `SELECT SUM(v.status = 'approved') AS vendas,
@@ -102,7 +114,7 @@ export function dashboard(db, period, tz, now = new Date(), productId = null) {
          FROM conversions v LEFT JOIN clicks c ON c.id = v.subid
         WHERE v.created_at >= ? AND v.created_at < ? AND ${PRODUCT_FILTER}`,
     )
-    .get(from, to, pid, pid)
+    .get(from, to, ...sc)
 
   const recentSales = db
     .prepare(
@@ -111,7 +123,7 @@ export function dashboard(db, period, tz, now = new Date(), productId = null) {
         WHERE v.status != 'test' AND v.created_at >= ? AND v.created_at < ? AND ${PRODUCT_FILTER}
         ORDER BY v.created_at DESC LIMIT 100`,
     )
-    .all(from, to, pid, pid)
+    .all(from, to, ...sc)
   const recentClicks = db
     .prepare(
       `SELECT c.*, p.name AS produto, ${CAMPAIGN} AS campanha, ${KEYWORD} AS palavra
@@ -119,7 +131,7 @@ export function dashboard(db, period, tz, now = new Date(), productId = null) {
         WHERE c.created_at >= ? AND c.created_at < ? AND ${PRODUCT_FILTER}
         ORDER BY c.created_at DESC LIMIT 50`,
     )
-    .all(from, to, pid, pid)
+    .all(from, to, ...sc)
 
   return {
     totals: {
@@ -130,8 +142,8 @@ export function dashboard(db, period, tz, now = new Date(), productId = null) {
       comissao: s.comissao || 0,
       reembolsos: s.reembolsos || 0,
     },
-    campaigns: breakdown(db, CAMPAIGN, from, to, 50, pid),
-    keywords: breakdown(db, KEYWORD, from, to, 30, pid),
+    campaigns: breakdown(db, CAMPAIGN, from, to, 50, sc),
+    keywords: breakdown(db, KEYWORD, from, to, 30, sc),
     recentSales,
     recentClicks,
   }
@@ -154,8 +166,8 @@ function localKey(iso, tz, hourly) {
 }
 
 // Visitas, vendas e comissão por hora (hoje/ontem) ou por dia (demais períodos).
-export function timeSeries(db, period, tz, now = new Date(), productId = null) {
-  const pid = productId || null
+export function timeSeries(db, period, tz, now = new Date(), productId = null, traffic = null) {
+  const sc = scope(productId, traffic)
   const hourly = period === 'hoje' || period === 'ontem'
   let [from, to] = periodRange(period, tz, now)
   if (period === 'tudo') {
@@ -178,13 +190,13 @@ export function timeSeries(db, period, tz, now = new Date(), productId = null) {
 
   const clicks = db
     .prepare(`SELECT c.created_at FROM clicks c WHERE c.is_test = 0 AND c.created_at >= ? AND c.created_at < ? AND ${PRODUCT_FILTER}`)
-    .all(from, to, pid, pid)
+    .all(from, to, ...sc)
   const sales = db
     .prepare(
       `SELECT v.created_at, v.amount FROM conversions v LEFT JOIN clicks c ON c.id = v.subid
         WHERE v.status = 'approved' AND v.created_at >= ? AND v.created_at < ? AND ${PRODUCT_FILTER}`,
     )
-    .all(from, to, pid, pid)
+    .all(from, to, ...sc)
   for (const r of clicks) {
     const b = buckets.get(localKey(r.created_at, tz, hourly))
     if (b) b.visitas++
@@ -204,9 +216,9 @@ export function timeSeries(db, period, tz, now = new Date(), productId = null) {
 const ORIGIN = `CASE WHEN c.id IS NULL THEN 'sem_clique' ELSE COALESCE(c.source, 'direto') END`
 
 // Visitas do período, mais recentes primeiro, com "clicou" e "comprou".
-export function visitors(db, { period, tz, productId = null, source = null, limit = 200, now = new Date() }) {
+export function visitors(db, { period, tz, productId = null, source = null, traffic = null, limit = 200, now = new Date() }) {
   const [from, to] = periodRange(period, tz, now)
-  const pid = productId || null
+  const sc = scope(productId, traffic)
   const src = source || null
   return db
     .prepare(
@@ -218,14 +230,14 @@ export function visitors(db, { period, tz, productId = null, source = null, limi
           AND (? IS NULL OR COALESCE(c.source, 'direto') = ?)
         ORDER BY c.created_at DESC LIMIT ?`,
     )
-    .all(from, to, pid, pid, src, src, limit)
+    .all(from, to, ...sc, src, src, limit)
 }
 
 // Vendas do período. Por padrão só vendas reais (aprovadas e reembolsos);
 // testes só aparecem se pedir.
-export function salesList(db, { period, tz, productId = null, origin = null, includeTests = false, limit = 300, now = new Date() }) {
+export function salesList(db, { period, tz, productId = null, origin = null, traffic = null, includeTests = false, limit = 300, now = new Date() }) {
   const [from, to] = periodRange(period, tz, now)
-  const pid = productId || null
+  const sc = scope(productId, traffic)
   const org = origin || null
   return db
     .prepare(
@@ -237,13 +249,13 @@ export function salesList(db, { period, tz, productId = null, origin = null, inc
           AND (? IS NULL OR ${ORIGIN} = ?)
         ORDER BY v.created_at DESC, v.id DESC LIMIT ?`,
     )
-    .all(from, to, pid, pid, includeTests ? 1 : 0, org, org, limit)
+    .all(from, to, ...sc, includeTests ? 1 : 0, org, org, limit)
 }
 
 // Visitas e vendas por origem (pago, orgânico, direto, referência, sem clique).
-export function originBreakdown(db, period, tz, now = new Date(), productId = null) {
+export function originBreakdown(db, period, tz, now = new Date(), productId = null, traffic = null) {
   const [from, to] = periodRange(period, tz, now)
-  const pid = productId || null
+  const sc = scope(productId, traffic)
   const map = new Map()
   const get = (k) => {
     if (!map.has(k)) map.set(k, { origem: k, visitas: 0, vendas: 0, comissao: 0 })
@@ -254,7 +266,7 @@ export function originBreakdown(db, period, tz, now = new Date(), productId = nu
       `SELECT COALESCE(c.source, 'direto') AS k, COUNT(*) AS n FROM clicks c
         WHERE c.is_test = 0 AND c.created_at >= ? AND c.created_at < ? AND ${PRODUCT_FILTER} GROUP BY k`,
     )
-    .all(from, to, pid, pid))
+    .all(from, to, ...sc))
     get(r.k).visitas = r.n
   for (const r of db
     .prepare(
@@ -262,7 +274,7 @@ export function originBreakdown(db, period, tz, now = new Date(), productId = nu
          FROM conversions v LEFT JOIN clicks c ON c.id = v.subid
         WHERE v.status = 'approved' AND v.created_at >= ? AND v.created_at < ? AND ${PRODUCT_FILTER} GROUP BY k`,
     )
-    .all(from, to, pid, pid))
+    .all(from, to, ...sc))
     Object.assign(get(r.k), { vendas: r.n, comissao: r.s || 0 })
   const order = ['pago', 'pago_outro', 'organico', 'referencia', 'direto', 'sem_clique']
   return [...map.values()].filter((r) => r.origem !== 'teste').sort((a, b) => order.indexOf(a.origem) - order.indexOf(b.origem))

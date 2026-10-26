@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { openDb, getSetting, setSetting } from './src/db.js'
 import { recordClick, recordOutbound, recordPing, recordPostback, exportGoogleAdsCsv, pageKey } from './src/tracking.js'
-import { dashboard, timeSeries, visitors, salesList, originBreakdown, PERIODS } from './src/stats.js'
+import { dashboard, timeSeries, visitors, salesList, originBreakdown, PERIODS, TRAFFIC } from './src/stats.js'
 import { checkHttps } from './src/health.js'
 import { parseScriptReport } from './src/report.js'
 import { runDiagnostics } from './src/diagnostics.js'
@@ -369,6 +369,19 @@ async function handlePublic(req, res, url) {
   return false
 }
 
+// Filtro Pago/Não pago: vem da URL e fica lembrado num cookie, para o painel
+// abrir sempre do jeito que você deixou.
+function trafficFilter(req, res, url) {
+  const q = url.searchParams.get('trafego')
+  if (q !== null) {
+    const value = TRAFFIC[q] ? q : ''
+    res.setHeader('Set-Cookie', `trk_trafego=${value}; Path=/; Max-Age=${value ? 365 * 86400 : 0}; SameSite=Lax`)
+    return value || null
+  }
+  const c = readCookie(req, 'trk_trafego')
+  return TRAFFIC[c] ? c : null
+}
+
 async function handleAdmin(req, res, url) {
   const { pathname: path } = url
   const method = req.method
@@ -380,7 +393,8 @@ async function handleAdmin(req, res, url) {
     const product = getProduct(db, url.searchParams.get('produto'))
     const tab = TABS[url.searchParams.get('aba')] ? url.searchParams.get('aba') : 'campanhas'
     const now = new Date()
-    const data = dashboard(db, period, cfg.tz, now, product?.id)
+    const traffic = trafficFilter(req, res, url)
+    const data = dashboard(db, period, cfg.tz, now, product?.id, traffic)
     return html(
       res,
       dashboardPage(data, {
@@ -389,9 +403,10 @@ async function handleAdmin(req, res, url) {
         currency: cfg.currency,
         products: listProducts(db),
         productId: product?.id || null,
-        series: timeSeries(db, period, cfg.tz, now, product?.id),
+        series: timeSeries(db, period, cfg.tz, now, product?.id, traffic),
         tab,
-        origins: originBreakdown(db, period, cfg.tz, now, product?.id),
+        origins: originBreakdown(db, period, cfg.tz, now, product?.id, traffic),
+        traffic,
       }),
     )
   }
@@ -563,7 +578,8 @@ async function handleAdmin(req, res, url) {
   if (path === '/visitantes' && method === 'GET') {
     const { period, product } = listFilters()
     const source = SOURCES[url.searchParams.get('origem')] ? url.searchParams.get('origem') : null
-    const rows = visitors(db, { period, tz: cfg.tz, productId: product?.id, source })
+    const traffic = trafficFilter(req, res, url)
+    const rows = visitors(db, { period, tz: cfg.tz, productId: product?.id, source, traffic })
     return html(
       res,
       visitorsPage(rows, {
@@ -573,6 +589,7 @@ async function handleAdmin(req, res, url) {
         products: listProducts(db),
         productId: product?.id || null,
         source,
+        traffic,
         live: url.searchParams.get('ao_vivo') === '1',
       }),
     )
@@ -582,7 +599,8 @@ async function handleAdmin(req, res, url) {
     const { period, product } = listFilters()
     const origin = ORIGIN_FILTERS[url.searchParams.get('origem')] ? url.searchParams.get('origem') : null
     const tests = url.searchParams.get('testes') === '1'
-    const rows = salesList(db, { period, tz: cfg.tz, productId: product?.id, origin, includeTests: tests })
+    const traffic = trafficFilter(req, res, url)
+    const rows = salesList(db, { period, tz: cfg.tz, productId: product?.id, origin, traffic, includeTests: tests })
     return html(
       res,
       salesPage(rows, {
@@ -592,6 +610,7 @@ async function handleAdmin(req, res, url) {
         products: listProducts(db),
         productId: product?.id || null,
         origin,
+        traffic,
         tests,
       }),
     )

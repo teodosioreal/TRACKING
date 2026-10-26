@@ -92,3 +92,29 @@ test('visitas antigas ganham origem na migração', () => {
   db.close()
   rmSync(dir, { recursive: true })
 })
+
+test('filtro Pago / Não pago separa visitas, vendas, gráfico e origem', async () => {
+  const { dashboard, timeSeries } = await import('../src/stats.js')
+  const db = openDb(':memory:')
+  const now = new Date('2026-10-26T15:00:00Z')
+  recordClick(db, { cid: 'visitaPG1', url: land + '?gclid=G1&campaignid=1' }, now)
+  recordClick(db, { cid: 'visitaOR1', url: land, referrer: 'https://www.google.com/' }, now)
+  recordClick(db, { cid: 'visitaDI1', url: land }, now)
+  recordPostback(db, new URLSearchParams('subid=visitaPG1&order=1&amount=50'), now)
+  recordPostback(db, new URLSearchParams('subid=visitaOR1&order=2&amount=30'), now)
+  recordPostback(db, new URLSearchParams('order=3&amount=20'), now) // sem clique
+  const tz = 'America/Sao_Paulo'
+  const t = (tr) => dashboard(db, 'hoje', tz, now, null, tr).totals
+  assert.deepEqual([t(null).visitas, t(null).vendas, t(null).comissao], [3, 3, 100])
+  assert.deepEqual([t('pago').visitas, t('pago').vendas, t('pago').comissao], [1, 1, 50])
+  assert.deepEqual([t('nao_pago').visitas, t('nao_pago').vendas, t('nao_pago').comissao], [2, 1, 30])
+  assert.equal(t('qualquer').visitas, 3) // valor inválido = sem filtro
+  const sum = (tr) => timeSeries(db, 'hoje', tz, now, null, tr).points.reduce((a, p) => a + p.comissao, 0)
+  assert.deepEqual([sum(null), sum('pago'), sum('nao_pago')], [100, 50, 30])
+  assert.deepEqual(originBreakdown(db, 'hoje', tz, now, null, 'pago').map((r) => r.origem), ['pago'])
+  assert.deepEqual(visitors(db, { period: 'hoje', tz, now, traffic: 'nao_pago' }).map((r) => r.id).sort(), ['visitaDI1', 'visitaOR1'])
+  assert.deepEqual(salesList(db, { period: 'hoje', tz, now, traffic: 'pago' }).map((r) => r.order_id), ['1'])
+  assert.equal(salesList(db, { period: 'hoje', tz, now }).length, 3)
+  const camp = dashboard(db, 'hoje', tz, now, null, 'pago').campaigns
+  assert.deepEqual(camp.map((c) => c.label), ['1'])
+})

@@ -1,5 +1,5 @@
 // HTML do painel, renderizado no servidor.
-import { PERIODS } from './stats.js'
+import { PERIODS, TRAFFIC } from './stats.js'
 import { PLATFORMS, DEFAULT_PARAM, trackingParam, productPages } from './products.js'
 import { SOURCES, uaInfo, referrerHost } from './source.js'
 
@@ -269,6 +269,21 @@ const saleStatus = (r) =>
     test: '<span class="tag warn">teste</span>',
   })[r.status] || esc(r.status)
 
+// Seletor Todos / Pago / Não pago. `href(valor)` monta o link mantendo os outros filtros.
+function trafficSeg(traffic, href) {
+  const opts = [['todos', 'Todos'], ['pago', 'Pago'], ['nao_pago', 'Não pago']]
+  return `<div class="seg" title="Fica lembrado até você mudar">${opts
+    .map(([k, v]) => `<a href="${href(k)}" class="${(traffic || 'todos') === k ? 'on' : ''}">${v}</a>`)
+    .join('')}</div>`
+}
+
+const trafficNote = (traffic) =>
+  traffic === 'pago'
+    ? 'só tráfego pago'
+    : traffic === 'nao_pago'
+      ? 'só tráfego não pago (orgânico, direto, referência)'
+      : 'todo o tráfego'
+
 // ---------------------------------------------------------------- Painel
 
 function niceMax(m) {
@@ -323,7 +338,7 @@ function chartHtml(series, currency) {
 
 export const TABS = { campanhas: 'Campanhas', palavras: 'Palavras-chave' }
 
-export function dashboardPage(d, { period, tz, currency, products, productId, series, tab, origins }) {
+export function dashboardPage(d, { period, tz, currency, products, productId, series, tab, origins, traffic }) {
   const t = d.totals
   const qs = (o = {}) => {
     const q = new URLSearchParams({ periodo: o.periodo ?? period })
@@ -331,6 +346,7 @@ export function dashboardPage(d, { period, tz, currency, products, productId, se
     if (prod) q.set('produto', prod)
     const aba = o.aba ?? tab
     if (aba && aba !== 'campanhas') q.set('aba', aba)
+    if (o.trafego) q.set('trafego', o.trafego)
     return '/?' + q.toString()
   }
   const periods = Object.entries(PERIODS)
@@ -366,8 +382,8 @@ export function dashboardPage(d, { period, tz, currency, products, productId, se
     'painel',
     `${noProducts}
 <div class="page-head"><div><h2 class="title">Visão geral</h2>
-<p class="sub">${esc(PERIODS[period])} · ${current ? esc(current.name) : 'todos os produtos'}</p></div>
-<div class="filters"><div class="seg">${periods}</div>
+<p class="sub">${esc(PERIODS[period])} · ${current ? esc(current.name) : 'todos os produtos'} · ${trafficNote(traffic)}</p></div>
+<div class="filters">${trafficSeg(traffic, (k) => qs({ trafego: k }))}<div class="seg">${periods}</div>
 <form method="get" action="/"><input type="hidden" name="periodo" value="${esc(period)}">${tab !== 'campanhas' ? `<input type="hidden" name="aba" value="${esc(tab)}">` : ''}
 <select name="produto" onchange="this.form.submit()" aria-label="Produto">${options}</select></form></div></div>
 
@@ -942,7 +958,7 @@ function originBars(rows, currency) {
     .join('')}</div>`
 }
 
-function filterBar({ base, period, products, productId, extra = '', hidden = {} }) {
+function filterBar({ base, period, products, productId, extra = '', hidden = {}, traffic = null }) {
   const q = (o) => {
     const p = new URLSearchParams({ periodo: period, ...hidden, ...o })
     if (productId && !('produto' in o)) p.set('produto', productId)
@@ -959,14 +975,14 @@ function filterBar({ base, period, products, productId, extra = '', hidden = {} 
     .filter(([, v]) => v)
     .map(([k, v]) => `<input type="hidden" name="${esc(k)}" value="${esc(v)}">`)
     .join('')
-  return `<div class="filters"><div class="seg">${periods}</div>
+  return `<div class="filters">${trafficSeg(traffic, (k) => q({ trafego: k }))}<div class="seg">${periods}</div>
 <form method="get" action="${base}" style="display:flex;gap:8px;flex-wrap:wrap">${hiddenInputs}
 <select name="produto" onchange="this.form.submit()" aria-label="Produto">${options}</select>${extra}</form></div>`
 }
 
 // ---------------------------------------------------------------- Visitantes
 
-export function visitorsPage(rows, { period, tz, currency, products, productId, source, live }) {
+export function visitorsPage(rows, { period, tz, currency, products, productId, source, traffic, live }) {
   const srcOptions = [`<option value="">Todas as origens</option>`]
     .concat(Object.entries(SOURCES).map(([k, v]) => `<option value="${k}" ${k === source ? 'selected' : ''}>${v}</option>`))
     .join('')
@@ -1000,10 +1016,11 @@ ${filterBar({
   products,
   productId,
   hidden: { origem: source || '', ao_vivo: live ? '1' : '' },
+  traffic,
   extra: `<select name="origem" onchange="this.form.submit()" aria-label="Origem">${srcOptions}</select>`,
 })}</div>
 <section><div class="toolbar"><b>${rows.length}${rows.length >= 200 ? '+' : ''} visita(s)</b>
-<span class="muted">· mais recentes primeiro</span>
+<span class="muted">· mais recentes primeiro · ${trafficNote(traffic)}</span>
 <label style="margin-left:auto;display:flex;gap:6px;align-items:center;cursor:pointer"><input type="checkbox" id="live" ${live ? 'checked' : ''}> Ao vivo ${live ? '<span class="livebadge"><i></i>atualizando</span>' : ''}</label></div>
 ${body}</section>`,
     `const lv=document.getElementById('live');lv.addEventListener('change',()=>{const u=new URL(location.href);
@@ -1014,7 +1031,7 @@ if(lv.checked)setTimeout(()=>location.reload(),10000);`,
 
 // ---------------------------------------------------------------- Vendas
 
-export function salesPage(rows, { period, tz, currency, products, productId, origin, tests }) {
+export function salesPage(rows, { period, tz, currency, products, productId, origin, traffic, tests }) {
   const real = rows.filter((r) => r.status === 'approved')
   const total = real.reduce((s, r) => s + r.amount, 0)
   const semClique = real.filter((r) => r.origem === 'sem_clique').length
@@ -1056,13 +1073,14 @@ export function salesPage(rows, { period, tz, currency, products, productId, ori
   return layout(
     'Vendas — Tracking',
     'vendas',
-    `<div class="page-head"><div><h2 class="title">Vendas</h2><p class="sub">Só vendas reais. Testes ficam de fora${tests ? ' (mostrando testes agora)' : ''}.</p></div>
+    `<div class="page-head"><div><h2 class="title">Vendas</h2><p class="sub">Só vendas reais. Testes ficam de fora${tests ? ' (mostrando testes agora)' : ''}. Mostrando ${trafficNote(traffic)}${traffic ? '; vendas sem clique só aparecem em Todos' : ''}.</p></div>
 ${filterBar({
   base: '/vendas',
   period,
   products,
   productId,
   hidden: { origem: origin || '', testes: tests ? '1' : '' },
+  traffic,
   extra: `<select name="origem" onchange="this.form.submit()" aria-label="Origem">${orgOptions}</select>`,
 })}</div>
 <div class="kpis">

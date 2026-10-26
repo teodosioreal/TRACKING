@@ -76,6 +76,10 @@ systemctl enable --now tracking-update.timer tracking-backup.timer
 
 - **Visão geral**: comissão, vendas, visitas, gráfico por hora/dia, origem das
   visitas e resultados por campanha/palavra-chave.
+- **Filtro Todos / Pago / Não pago** (Visão geral, Visitantes e Vendas): separa
+  tráfego pago (Google Ads e outros pagos) do não pago (orgânico, direto,
+  referência). A escolha fica lembrada até você mudar. Vendas sem clique não
+  têm origem e só aparecem em Todos.
 - **Visitantes**: cada visita com IP, origem (Pago, Orgânico, Referência,
   Direto, Teste), produto, campanha/palavra-chave, aparelho, se clicou para
   comprar e se comprou. Opção “Ao vivo” (atualiza a cada 10 s).
