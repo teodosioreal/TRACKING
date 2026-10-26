@@ -24,7 +24,15 @@ test('formulário valida nome, conversão e endereço', () => {
   const r = parseProductForm(form({ name: '', conversion_name: '', review_url: 'javascript:alert(1)' }))
   assert.ok(r.errors.name && r.errors.conversion_name && r.errors.review_url)
   const ok = parseProductForm(form({ name: ' X ', conversion_name: 'Compra - X', review_url: 'https://site.com/r' }))
-  assert.deepEqual(ok.values, { name: 'X', platform: 'buygoods', conversion_name: 'Compra - X', review_url: 'https://site.com/r' })
+  assert.deepEqual(ok.values, {
+    name: 'X',
+    platform: 'buygoods',
+    conversion_name: 'Compra - X',
+    review_url: 'https://site.com/r',
+    affiliate_url: null,
+    tracking_param: null,
+  })
+  assert.ok(parseProductForm(form({ name: 'X', conversion_name: 'Y', affiliate_url: 'getnervecalm' })).errors.affiliate_url)
   assert.ok(parseProductForm(form({ name: 'X', conversion_name: 'Y', platform: 'clickbank' })).errors.platform)
 })
 
@@ -131,7 +139,7 @@ test('verificação da página acha o script e os links', async () => {
   const page = (body, status = 200) => async () => ({ ok: status < 400, status, text: async () => body })
   const ok = await checkPage(product, page('<a href="https://buygoods.com/x">c</a><script src="https://t/t.js?p=pabc12345"></script>'))
   assert.match(ok, /Script deste produto encontrado/)
-  assert.match(ok, /1 link\(s\)/)
+  assert.match(ok, /1 link\(s\) de afiliado/)
   assert.match(await checkPage(product, page('<script src="https://t/t.js?p=pzzz99999"></script>')), /OUTRO produto/)
   assert.match(await checkPage(product, page('', 404)), /erro 404/)
   assert.match(await checkPage({ id: 'pabc12345' }), /Informe o endereço/)
@@ -157,4 +165,27 @@ test('versão é lida do git; sem git não quebra', async () => {
   const none = readVersion(tmpdir())
   assert.equal(none.hash, null)
   assert.ok(none.startedAt)
+})
+
+test('verificação conta link de afiliado no site do produtor (aff_id)', async () => {
+  const product = { id: 'pabc12345', review_url: 'https://s.com/r', affiliate_url: 'https://getnervecalm.com/dtc/?aff_id=1' }
+  const page = (body) => async () => ({ ok: true, status: 200, text: async () => body })
+  const r = await checkPage(
+    product,
+    page('<a href="https://getnervecalm.com/dtc/?aff_id=143471&amp;subid=adsgoogle">Buy</a><a href="https://outro.com/x?aff_id=9">B</a><a href="https://blog.com">x</a><script src="https://t/t.js?p=pabc12345"></script>'),
+  )
+  assert.match(r, /2 link\(s\) de afiliado/)
+})
+
+test('parâmetro do ID da visita: padrão da plataforma ou personalizado', async () => {
+  const { trackingParam } = await import('../src/products.js')
+  const bg = parseProductForm(form({ name: 'X', conversion_name: 'Y', tracking_param: 'subid' })).values
+  assert.equal(bg.tracking_param, null) // igual ao padrão: não guarda
+  assert.equal(trackingParam(bg), 'subid')
+  const cb = parseProductForm(form({ name: 'X', conversion_name: 'Y', platform: 'outra', tracking_param: 'tid' })).values
+  assert.equal(trackingParam(cb), 'tid')
+  assert.ok(parseProductForm(form({ name: 'X', conversion_name: 'Y', tracking_param: 'a b' })).errors.tracking_param)
+  const db = openDb(':memory:')
+  const id = createProduct(db, cb)
+  assert.equal(trackingParam(getProduct(db, id)), 'tid')
 })

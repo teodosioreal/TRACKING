@@ -86,6 +86,14 @@ Abra `https://tracking.odingdong.tech` (login do `.env`).
 
 Detalhes:
 
+- **Link de afiliado**: o script reconhece o botão de compra pelo domínio do
+  link cadastrado no produto, por links com `aff_id=` (formato da BuyGoods,
+  que costuma ir direto para o site do produtor) e por links para buygoods.
+  Ele grava o ID da visita no `subid`; um subid fixo que já estava no link
+  vai para o `subid2`.
+- **Outras plataformas**: escolha "Outra plataforma" e, em Configurações →
+  Avançado, o parâmetro que a plataforma devolve no postback (ex.: `tid`).
+
 - O **postback da BuyGoods é um só** para todos os produtos
   (Configurações). A venda cai no produto certo pela visita que a gerou.
 - Cada produto tem sua **planilha** (`/google-ads.csv?key=...&produto=ID`)

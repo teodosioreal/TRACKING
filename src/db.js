@@ -67,6 +67,14 @@ export function openDb(path) {
     CREATE INDEX IF NOT EXISTS conversions_created ON conversions(created_at);
     CREATE INDEX IF NOT EXISTS conversions_subid ON conversions(subid);
 
+    -- Imagem do produto (guardada no banco para entrar no backup).
+    CREATE TABLE IF NOT EXISTS product_images (
+      product_id TEXT PRIMARY KEY,
+      mime       TEXT NOT NULL,
+      data       BLOB NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
     -- Pequenos registros do sistema (ex.: quando o Google Ads leu a planilha).
     CREATE TABLE IF NOT EXISTS settings (
       key   TEXT PRIMARY KEY,
@@ -79,6 +87,9 @@ export function openDb(path) {
   if (!cols.has('product_id')) db.exec('ALTER TABLE clicks ADD COLUMN product_id TEXT')
   if (!cols.has('is_test')) db.exec('ALTER TABLE clicks ADD COLUMN is_test INTEGER NOT NULL DEFAULT 0')
   db.exec('CREATE INDEX IF NOT EXISTS clicks_product ON clicks(product_id, created_at)')
+  const pcols = new Set(db.prepare('PRAGMA table_info(products)').all().map((c) => c.name))
+  if (!pcols.has('affiliate_url')) db.exec('ALTER TABLE products ADD COLUMN affiliate_url TEXT')
+  if (!pcols.has('tracking_param')) db.exec('ALTER TABLE products ADD COLUMN tracking_param TEXT')
 
   return db
 }

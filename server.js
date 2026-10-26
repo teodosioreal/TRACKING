@@ -18,6 +18,14 @@ import {
   getProduct,
   listProducts,
   productStatus,
+  affiliateHost,
+  trackingParam,
+  saveImage,
+  getImage,
+  removeImage,
+  setupProgress,
+  recentPostbacks,
+  MAX_IMAGE_BYTES,
 } from './src/products.js'
 import { checkPage } from './src/verify.js'
 import {
@@ -31,6 +39,7 @@ import {
   setHealth,
   getHealth,
   TABS,
+  PRODUCT_TABS,
 } from './src/views.js'
 import { readVersion } from './src/version.js'
 
@@ -79,14 +88,15 @@ const trackerJs = readFileSync(join(here, 'public', 't.js'), 'utf8')
 const defaultConversion = () => getSetting(db, 'default_conversion_name') || cfg.conversionName
 
 const FLASH = {
-  criado: 'Produto cadastrado. Agora copie o script do passo 1 e cole na página de review.',
+  criado: 'Produto cadastrado. Agora copie o script abaixo e cole na página de review.',
   salvo: 'Alterações salvas.',
   conversao: 'Nome da conversão salvo. Use exatamente este nome no Google Ads.',
   'conversao-invalida': 'Nome da conversão inválido: não pode ficar vazio nem passar de 100 caracteres.',
   arquivado: 'Produto arquivado.',
   reativado: 'Produto reativado.',
   teste: 'Venda de teste registrada e ligada a este produto. Ela não vai para o Google Ads.',
-  'sem-visita': 'Ainda não há visita deste produto. Clique em "Testar instalação" primeiro e depois simule a venda.',
+  'sem-visita': 'Ainda não há visita deste produto. Clique em "Testar instalação" (aba Script) primeiro e depois simule a venda.',
+  'imagem-removida': 'Imagem removida.',
 }
 
 function safeEqual(a, b) {
@@ -161,7 +171,12 @@ async function handlePublic(req, res, url) {
 
   if (path === '/t.js' && method === 'GET') {
     const pid = url.searchParams.get('p')
-    const js = trackerJs.replace('__BASE__', baseUrl(req)).replace('__PRODUCT__', isValidPid(pid) ? pid : '')
+    const product = isValidPid(pid) ? getProduct(db, pid) : null
+    const js = trackerJs
+      .replace('__BASE__', baseUrl(req))
+      .replace('__PRODUCT__', product ? product.id : '')
+      .replace('__DOMAINS__', affiliateHost(product))
+      .replace('__PARAM__', product ? trackingParam(product) : '')
     send(res, 200, js, 'application/javascript; charset=utf-8', { ...CORS, 'Cache-Control': 'public, max-age=300' })
     return true
   }
@@ -283,9 +298,13 @@ async function handleAdmin(req, res, url) {
 
   if (path === '/produtos' && method === 'GET') {
     const showArchived = url.searchParams.has('arquivados')
+    const products = listProducts(db, { archived: showArchived }).map((p) => ({
+      ...p,
+      progress: setupProgress(productStatus(db, p)),
+    }))
     return html(
       res,
-      productsPage(listProducts(db, { archived: showArchived }), {
+      productsPage(products, {
         currency: cfg.currency,
         archivedCount: listProducts(db, { archived: true }).length,
         showArchived,
@@ -302,39 +321,78 @@ async function handleAdmin(req, res, url) {
     const { values, errors } = parseProductForm(form)
     if (errors) return html(res, productFormPage({ values, errors, defaultConversion: 'Compra - Nome do produto' }), 400)
     const id = createProduct(db, values)
-    return redirect(res, `/produtos/${id}?ok=criado`)
+    return redirect(res, `/produtos/${id}?aba=script&ok=criado`)
   }
 
-  const m = path.match(/^\/produtos\/(p[a-z0-9]{8})(?:\/([a-z-]+))?$/)
+  const m = path.match(/^\/produtos\/(p[a-z0-9]{8})(?:\/([a-z-]+(?:\/[a-z-]+)?))?$/)
   if (m) {
     const product = getProduct(db, m[1])
     if (!product) return send(res, 404, 'produto não encontrado')
     const action = m[2] || ''
+    const go = (tab, q) => redirect(res, `/produtos/${product.id}?aba=${tab}&${q}`)
 
-    if (!action && method === 'GET') {
+    const renderProduct = (tab, extra = {}) => {
+      const st = productStatus(db, product)
       const flashKey = url.searchParams.get('ok') || url.searchParams.get('erro')
       const flash = FLASH[flashKey] ? { text: FLASH[flashKey], bad: url.searchParams.has('erro') } : null
-      return html(
-        res,
-        productPage(product, productStatus(db, product), {
-          base: baseUrl(req),
-          key: cfg.secretKey,
-          tz: cfg.tz,
-          currency: cfg.currency,
-          flash,
-        }),
-      )
+      const totals = listProducts(db, { archived: Boolean(product.archived) }).find((p) => p.id === product.id) || {
+        visitas: 0,
+        vendas: 0,
+        comissao: 0,
+      }
+      const img = getImage(db, product.id)
+      return productPage(product, st, {
+        base: baseUrl(req),
+        key: cfg.secretKey,
+        tz: cfg.tz,
+        currency: cfg.currency,
+        flash,
+        tab,
+        progress: setupProgress(st),
+        totals,
+        postbacks: tab === 'buygoods' ? recentPostbacks(db, 10) : [],
+        image: img ? { updated_at: img.updated_at } : null,
+        ...extra,
+      })
+    }
+
+    if (!action && method === 'GET') {
+      const tab = PRODUCT_TABS[url.searchParams.get('aba')] ? url.searchParams.get('aba') : 'status'
+      return html(res, renderProduct(tab))
     }
 
     if (!action && method === 'POST') {
       const form = new URLSearchParams(await readBody(req))
       const { values, errors } = parseProductForm(form)
-      if (errors) return html(res, productFormPage({ product, values, errors }), 400)
+      if (errors) return html(res, renderProduct('config', { errors, values }), 400)
       updateProduct(db, product.id, values)
-      return redirect(res, `/produtos/${product.id}?ok=salvo`)
+      return go('config', 'ok=salvo')
     }
 
-    if (action === 'editar' && method === 'GET') return html(res, productFormPage({ product }))
+    if (action === 'editar' && method === 'GET') return redirect(res, `/produtos/${product.id}?aba=config`)
+
+    if (action === 'imagem' && method === 'GET') {
+      const img = getImage(db, product.id)
+      if (!img) return send(res, 404, 'sem imagem')
+      res.writeHead(200, { 'Content-Type': img.mime, 'Cache-Control': 'private, max-age=31536000, immutable' })
+      return res.end(img.data)
+    }
+
+    if (action === 'imagem' && method === 'POST') {
+      let data
+      try {
+        data = JSON.parse(await readBody(req, Math.ceil(MAX_IMAGE_BYTES * 1.4) + 1000)).data
+      } catch {
+        return send(res, 413, JSON.stringify({ error: 'Imagem grande demais (máximo 1,5 MB).' }), 'application/json; charset=utf-8')
+      }
+      const error = saveImage(db, product.id, data)
+      return send(res, error ? 400 : 200, JSON.stringify(error ? { error } : { ok: true }), 'application/json; charset=utf-8')
+    }
+
+    if (action === 'imagem/remover' && method === 'POST') {
+      removeImage(db, product.id)
+      return go('config', 'ok=imagem-removida')
+    }
 
     if (action === 'checklist' && method === 'GET') {
       return html(res, checklistHtml(product, productStatus(db, product), { tz: cfg.tz }))
@@ -352,27 +410,28 @@ async function handleAdmin(req, res, url) {
 
     if (action === 'conversao' && method === 'POST') {
       const name = String(new URLSearchParams(await readBody(req)).get('conversion_name') || '').trim()
-      if (conversionNameError(name)) return redirect(res, `/produtos/${product.id}?erro=conversao-invalida#google-ads`)
+      if (conversionNameError(name)) return go('google', 'erro=conversao-invalida')
       setConversionName(db, product.id, name)
-      return redirect(res, `/produtos/${product.id}?ok=conversao#google-ads`)
+      return go('google', 'ok=conversao')
     }
 
     if ((action === 'arquivar' || action === 'reativar') && method === 'POST') {
       setArchived(db, product.id, action === 'arquivar')
-      return redirect(res, `/produtos/${product.id}?ok=${action === 'arquivar' ? 'arquivado' : 'reativado'}`)
+      return go('config', `ok=${action === 'arquivar' ? 'arquivado' : 'reativado'}`)
     }
 
     if (action === 'simular-venda' && method === 'POST') {
       const visit = db
         .prepare('SELECT id FROM clicks WHERE product_id = ? ORDER BY created_at DESC LIMIT 1')
         .get(product.id)
-      if (!visit) return redirect(res, `/produtos/${product.id}?erro=sem-visita`)
+      if (!visit) return go('buygoods', 'erro=sem-visita')
       recordPostback(
         db,
         new URLSearchParams({ subid: visit.id, order: `TESTE-${Date.now()}`, amount: '1.00', type: 'teste' }),
       )
-      return redirect(res, `/produtos/${product.id}?ok=teste`)
+      return go('buygoods', 'ok=teste')
     }
+    return send(res, 404, 'não encontrado')
   }
 
   if (path === '/configuracoes' && method === 'POST') {

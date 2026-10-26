@@ -6,7 +6,11 @@ const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36'
 
 export async function checkPage(product, fetchImpl = fetch, trackerHost = '') {
-  if (!product.review_url) return '<span class="warn">Informe o endereço da página em Editar.</span>'
+  let affHost = ''
+  try {
+    affHost = product.affiliate_url ? new URL(product.affiliate_url).hostname.replace(/^www\./, '') : ''
+  } catch {}
+  if (!product.review_url) return '<span class="warn">Informe o endereço da página na aba Configurações.</span>'
   let res
   let body
   try {
@@ -27,7 +31,8 @@ export async function checkPage(product, fetchImpl = fetch, trackerHost = '') {
   const escaped = /&lt;script[^&]*t\.js\?p=/i.test(body)
   const otherScript = !hasScript && /t\.js\?p=p[a-z0-9]{8}/.test(body)
   const oldScript = !hasScript && trackerHost && body.includes(`${trackerHost}/t.js"`)
-  const links = (body.match(/href\s*=\s*["'][^"']*buygoods[^"']*["']/gi) || []).length
+  const hrefs = body.match(/href\s*=\s*["'][^"']*["']/gi) || []
+  const links = hrefs.filter((h) => /buygoods|[?&](?:amp;)?aff_id=/i.test(h) || (affHost && h.toLowerCase().includes(affHost))).length
   const challenge = /cf-browser-verification|challenge-platform|just a moment\.\.\.|captcha/i.test(body)
 
   const lines = [
@@ -55,8 +60,8 @@ export async function checkPage(product, fetchImpl = fetch, trackerHost = '') {
 
   lines.push(
     links
-      ? `<span class="ok">✓ ${links} link(s) da BuyGoods no código.</span>`
-      : '<span class="warn">! Nenhum link da BuyGoods no código.</span> <span class="muted">Se o botão usa link encurtado ou de outro domínio, coloque <code>data-rastrear</code> nele. Se a página é montada por JavaScript, vale o Testar instalação.</span>',
+      ? `<span class="ok">✓ ${links} link(s) de afiliado no código.</span>`
+      : '<span class="warn">! Nenhum link de afiliado no código.</span> <span class="muted">Cadastre o link de afiliado em Configurações. Se o botão usa link encurtado, coloque <code>data-rastrear</code> nele. Se a página é montada por JavaScript, vale o Testar instalação.</span>',
   )
   return lines.join('<br>')
 }

@@ -1,17 +1,27 @@
 // Script da página de review. Cada produto tem o seu (o painel gera):
 //   <script src="https://tracking.odingdong.tech/t.js?p=ID_DO_PRODUTO" async></script>
-// Opcional no <script>: data-dominios="buygoods.com,outro.com" e data-param="subid".
+// Reconhece como link de compra: links com aff_id (formato da BuyGoods, mesmo no
+// site do produtor), links para buygoods, o domínio do link de afiliado cadastrado
+// no produto e links com o atributo data-rastrear.
+// Opcional no <script>: data-dominios="outro.com" e data-param="subid".
 ;(function () {
   var BASE = '__BASE__'
   var PID = '__PRODUCT__'
+  var PRODUCT_DOMAINS = '__DOMAINS__'
+  var PRODUCT_PARAM = '__PARAM__'
   var KEY = 'rt_visita' + (PID ? '_' + PID : '')
   var TTL = 90 * 864e5
   var script = document.currentScript || {}
   var data = script.dataset || {}
-  var domains = (data.dominios || 'buygoods').split(',').map(function (d) {
-    return d.trim().toLowerCase()
-  })
-  var param = data.param || 'subid'
+  var domains = ['buygoods']
+    .concat(PRODUCT_DOMAINS ? PRODUCT_DOMAINS.split(',') : [])
+    .concat(data.dominios ? data.dominios.split(',') : [])
+    .map(function (d) {
+      return d.trim().toLowerCase()
+    })
+  // Nome do parâmetro que leva o ID da visita (BuyGoods: subid; outras plataformas
+  // podem usar tid, sck, cid...). Vem da configuração do produto.
+  var param = data.param || PRODUCT_PARAM || 'subid'
 
   var q = new URLSearchParams(location.search)
   var adId = q.get('gclid') || q.get('gbraid') || q.get('wbraid') || ''
@@ -58,14 +68,19 @@
     if (a.hasAttribute('data-rastrear')) return true
     var host = (a.hostname || '').toLowerCase()
     for (var i = 0; i < domains.length; i++) if (domains[i] && host.indexOf(domains[i]) !== -1) return true
-    return false
+    return /[?&]aff_id=/i.test(a.href)
   }
+
+  var OUR_ID = /^v[a-z0-9]{8,}$/
 
   function tag(a) {
     if (!a.href || !isTracked(a)) return false
     try {
       var u = new URL(a.href)
-      if (u.searchParams.get(param) !== cid) {
+      var old = u.searchParams.get(param)
+      if (old !== cid) {
+        // Um subid fixo que já estava no link (ex.: "adsgoogle") vai para o subid2.
+        if (param === 'subid' && old && !OUR_ID.test(old) && !u.searchParams.get('subid2')) u.searchParams.set('subid2', old)
         u.searchParams.set(param, cid)
         a.href = u.toString()
       }

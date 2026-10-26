@@ -1,6 +1,6 @@
 // HTML do painel, renderizado no servidor.
 import { PERIODS } from './stats.js'
-import { PLATFORMS } from './products.js'
+import { PLATFORMS, DEFAULT_PARAM, trackingParam } from './products.js'
 
 export const esc = (v) =>
   String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c])
@@ -22,21 +22,21 @@ function ago(iso, now = Date.now()) {
 
 const CSS = `
 :root{color-scheme:light;--bg:#f4f5f7;--card:#fff;--text:#111318;--text2:#3d424d;--muted:#6b7280;--line:#e6e8ec;--soft:#f8f9fb;--accent:#2563eb;--accent-soft:#eaf1fe;
---series-1:#2a78d6;--ok:#15803d;--okbg:#ecfdf3;--warn:#a16207;--warnbg:#fefce8;--bad:#b91c1c;--badbg:#fef2f2;--side:#0f172a;--side-text:#cbd5e1;--side-on:#fff}
+--series-1:#2a78d6;--ok:#15803d;--okbg:#ecfdf3;--warn:#a16207;--warnbg:#fefce8;--bad:#b91c1c;--badbg:#fef2f2}
 @media (prefers-color-scheme:dark){:root{color-scheme:dark;--bg:#0c0e12;--card:#15181e;--text:#eceef2;--text2:#c5c9d2;--muted:#9aa1ad;--line:#262a33;--soft:#1a1e25;--accent:#60a5fa;--accent-soft:#16233a;
---series-1:#3987e5;--ok:#4ade80;--okbg:#0f2a1b;--warn:#facc15;--warnbg:#2a250f;--bad:#f87171;--badbg:#2c1414;--side:#090b0f;--side-text:#9aa3b2;--side-on:#fff}}
+--series-1:#3987e5;--ok:#4ade80;--okbg:#0f2a1b;--warn:#facc15;--warnbg:#2a250f;--bad:#f87171;--badbg:#2c1414}}
 *{box-sizing:border-box}html,body{margin:0}body{background:var(--bg);color:var(--text);font:14px/1.5 Inter,system-ui,-apple-system,Segoe UI,Roboto,sans-serif;-webkit-font-smoothing:antialiased}
 a{color:var(--accent)}code{font-size:12.5px}
-.shell{display:grid;grid-template-columns:232px minmax(0,1fr);min-height:100vh;background:linear-gradient(to right,var(--side) 232px,var(--bg) 232px)}
-.side{background:var(--side);color:var(--side-text);padding:20px 14px;display:flex;flex-direction:column;gap:22px;position:sticky;top:0;height:100vh}
-.logo{display:flex;align-items:center;gap:10px;color:#fff;text-decoration:none;font-weight:650;font-size:16px;padding:0 8px}
-.logo .mk{width:30px;height:30px;border-radius:8px;background:linear-gradient(135deg,#3b82f6,#1d4ed8);display:flex;align-items:center;justify-content:center;font-weight:800}
-.side nav{display:flex;flex-direction:column;gap:2px}
-.side nav a{display:flex;align-items:center;gap:10px;color:var(--side-text);text-decoration:none;padding:9px 10px;border-radius:8px;font-weight:500}
-.side nav a:hover{background:rgba(255,255,255,.06);color:#fff}.side nav a.on{background:rgba(255,255,255,.1);color:var(--side-on)}
-.side nav svg{width:18px;height:18px;flex:none}
-.ver{margin-top:auto;font-size:12px;color:var(--side-text);opacity:.75;text-decoration:none;padding:0 8px;line-height:1.4}.ver:hover{opacity:1}
-.content{padding:28px 32px 64px;max-width:1240px;width:100%}
+.top{background:var(--card);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}
+.top-in{max-width:1240px;margin:0 auto;padding:0 32px;display:flex;align-items:center;gap:28px}
+.logo{display:flex;align-items:center;gap:10px;color:var(--text);text-decoration:none;font-weight:700;font-size:16px;padding:14px 0}
+.logo .mk{width:30px;height:30px;border-radius:8px;background:linear-gradient(135deg,#3b82f6,#1d4ed8);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800}
+.mainnav{display:flex;gap:4px;align-self:stretch;overflow-x:auto}
+.mainnav a{display:flex;align-items:center;gap:8px;color:var(--muted);text-decoration:none;padding:0 12px;font-weight:500;border-bottom:2px solid transparent;white-space:nowrap}
+.mainnav a:hover{color:var(--text)}.mainnav a.on{color:var(--text);border-bottom-color:var(--accent)}
+.mainnav svg{width:17px;height:17px;flex:none}
+.ver{margin-left:auto;font-size:12px;color:var(--muted);text-decoration:none;text-align:right;line-height:1.35;white-space:nowrap}.ver:hover{color:var(--text)}
+.content{padding:28px 32px 64px;max-width:1240px;margin:0 auto;width:100%}
 h2.title{font-size:22px;letter-spacing:-.01em;margin:0 0 2px}.sub{color:var(--muted);margin:0 0 20px}
 .page-head{display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end;justify-content:space-between;margin-bottom:20px}.page-head .sub{margin:0}
 .filters{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
@@ -98,9 +98,31 @@ button:hover,.btn:hover{border-color:var(--muted)}
 .chart .tip{position:absolute;pointer-events:none;background:var(--card);border:1px solid var(--line);border-radius:9px;padding:8px 10px;font-size:12.5px;box-shadow:0 6px 20px rgba(0,0,0,.12);white-space:nowrap;z-index:2}
 .chart .tip b{display:block;margin-bottom:2px}
 details.tbl{border-top:1px solid var(--line)}details.tbl summary{padding:10px 18px;color:var(--muted);cursor:pointer;font-size:13px}
+.card-head{display:flex;gap:12px;align-items:center;margin-bottom:12px}
+.thumb{border-radius:10px;object-fit:cover;flex:none;background:var(--soft);border:1px solid var(--line)}
+.thumb.ph,.pimg.ph{display:inline-flex;align-items:center;justify-content:center;background:var(--accent-soft);color:var(--accent);font-weight:700;font-size:18px;border:1px solid var(--line)}
+.prog{margin:4px 0}.prog-top{display:flex;justify-content:space-between;font-size:12.5px;color:var(--muted);margin-bottom:5px}.prog-top b{color:var(--text)}
+.prog-bar{height:8px;border-radius:999px;background:var(--soft);border:1px solid var(--line);overflow:hidden}.prog-bar div{height:100%;border-radius:999px;background:var(--accent)}
+.prog.ok .prog-bar div{background:var(--ok)}.prog.low .prog-bar div{background:var(--warn)}
+.phead{display:flex;gap:18px;align-items:center;margin-bottom:18px;flex-wrap:wrap}
+.phead-main{flex:1;min-width:220px}.phead-main .sub{margin:0}.crumbs{font-size:12.5px;color:var(--muted)}.crumbs a{color:var(--muted);text-decoration:none}
+.phead-prog{width:260px}.phead-prog small{display:block;margin-top:4px;font-size:12px}
+.imgbtn{position:relative;padding:0;border:0;background:none;border-radius:14px;overflow:hidden;cursor:pointer;flex:none}
+.pimg{width:84px;height:84px;border-radius:14px;object-fit:cover;display:block;border:1px solid var(--line);background:var(--soft)}
+.pimg.ph{font-size:30px}
+.imgedit{position:absolute;inset:auto 0 0 0;background:rgba(0,0,0,.55);color:#fff;font-size:11.5px;padding:3px 0;text-align:center;opacity:0;transition:opacity .15s}
+.imgbtn:hover .imgedit,.imgbtn:focus .imgedit{opacity:1}.imgbtn .pimg.ph+.imgedit{opacity:1;background:rgba(37,99,235,.85)}
+.ptabs{background:var(--card);border:1px solid var(--line);border-radius:12px;margin-bottom:18px;padding:0 8px}
+.dot{display:inline-block;width:8px;height:8px;border-radius:999px;background:var(--line);margin-left:4px;vertical-align:middle}
+.dot.ok{width:auto;height:auto;background:none;color:var(--ok);font-size:12px}
+.grid2{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:18px;align-items:start}
+.mini-kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.mini-kpis span{display:block;font-size:12px;color:var(--muted)}.mini-kpis b{font-size:18px}
+details.howto{border:1px solid var(--line);border-radius:10px;margin:8px 0;background:var(--soft)}details.howto summary{padding:10px 14px;cursor:pointer;font-weight:600}
+details.howto>ol,details.howto>p,details.howto>table{margin:0 14px 12px}details.howto table td{white-space:normal;vertical-align:top;padding:6px 8px}
+.imgrow{display:flex;gap:16px;align-items:center;flex-wrap:wrap}.imgrow .actions{margin:0}.imgrow form{margin:0}
+@media (max-width:900px){.grid2{grid-template-columns:1fr}.phead-prog{width:100%}}
 @media (max-width:1100px){.kpis.minor{grid-template-columns:repeat(3,minmax(0,1fr))}}
-@media (max-width:900px){.shell{display:block;background:var(--bg)}.side{position:static;height:auto;flex-direction:row;flex-wrap:wrap;align-items:center;gap:8px 14px;padding:12px 16px}
-.side nav{flex-direction:row;gap:2px;overflow-x:auto}.side nav a{padding:7px 9px}.side nav svg{display:none}.ver{margin:0;width:100%;order:3;padding:0}
+@media (max-width:900px){.top-in{padding:0 16px;gap:12px;flex-wrap:wrap}.logo{padding:10px 0}.mainnav{order:3;width:100%;margin:0 -4px}.mainnav a{padding:10px 8px}.mainnav svg{display:none}
 .content{padding:18px 16px 48px}.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.kpis.minor{grid-template-columns:repeat(2,minmax(0,1fr))}.filters{width:100%}.filters form,.filters select{width:100%}}
 @media (max-width:600px){.conv .row{flex-wrap:wrap}.conv .row input{flex-basis:100%}.code{flex-direction:column}.code button{align-self:flex-end}.kpi b{font-size:22px}.chart .plot,.chart .xl{margin-left:44px}}
 `
@@ -154,12 +176,12 @@ function layout(title, active, body, extraJs = '') {
   const link = (href, key, label) => `<a href="${href}" class="${active === key ? 'on' : ''}">${ICONS[key]}${label}</a>`
   return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(title)}</title><style>${CSS}</style></head><body>
-<div class="shell"><aside class="side">
+<header class="top"><div class="top-in">
 <a class="logo" href="/"><span class="mk">T</span>Tracking</a>
-<nav>${link('/', 'painel', 'Visão geral')}${link('/produtos', 'produtos', 'Produtos')}${link('/configuracoes', 'config', 'Configurações')}</nav>
+<nav class="mainnav">${link('/', 'painel', 'Visão geral')}${link('/produtos', 'produtos', 'Produtos')}${link('/configuracoes', 'config', 'Configurações')}</nav>
 <a class="ver" href="/configuracoes#versao" title="${esc(app.version.message || '')}">${versionLabel()}</a>
-</aside>
-<main class="content">${healthAlert()}${body}</main></div>
+</div></header>
+<main class="content">${healthAlert()}${body}</main>
 <script>${SCRIPT}${extraJs}</script>
 </body></html>`
 }
@@ -364,19 +386,29 @@ ${chartHtml(series, currency)}</section>
 
 // ---------------------------------------------------------------- Produtos
 
+function thumb(p, size = 44) {
+  return p.image_at
+    ? `<img class="thumb" src="/produtos/${esc(p.id)}/imagem?v=${encodeURIComponent(p.image_at)}" alt="" width="${size}" height="${size}">`
+    : `<span class="thumb ph" style="width:${size}px;height:${size}px">${esc((p.name || '?').trim()[0]?.toUpperCase() || '?')}</span>`
+}
+
+function progressBar(pr) {
+  const cls = pr.pct === 100 ? 'ok' : pr.pct >= 60 ? 'mid' : 'low'
+  return `<div class="prog ${cls}"><div class="prog-top"><span>Configuração</span><b>${pr.pct}%</b></div>
+<div class="prog-bar"><div style="width:${pr.pct}%"></div></div></div>`
+}
+
 export function productsPage(products, { currency, archivedCount, showArchived }) {
   const cards = products.length
     ? `<div class="cards">${products
-        .map((p) => {
-          const installed = p.last_ping_at
-            ? '<span class="tag ok">script instalado</span>'
-            : '<span class="tag warn">aguardando instalação</span>'
-          return `<a class="card" href="/produtos/${esc(p.id)}">
-<h4>${esc(p.name)}</h4><div class="muted">${esc(PLATFORMS[p.platform] || p.platform)} · ${installed}</div>
-<div class="stats"><span><b>${p.visitas}</b> visitas</span><span><b>${p.vendas}</b> vendas</span><span><b>${money(p.comissao, currency)}</b></span></div></a>`
-        })
+        .map(
+          (p) => `<a class="card" href="/produtos/${esc(p.id)}">
+<div class="card-head">${thumb(p, 48)}<div><h4>${esc(p.name)}</h4><div class="muted">${esc(PLATFORMS[p.platform] || p.platform)}</div></div></div>
+${progressBar(p.progress)}
+<div class="stats"><span><b>${p.visitas}</b> visitas</span><span><b>${p.vendas}</b> vendas</span><span><b>${money(p.comissao, currency)}</b></span></div></a>`,
+        )
         .join('')}</div>`
-    : `<section><div class="empty">${showArchived ? 'Nenhum produto arquivado.' : 'Nenhum produto ainda. Clique em <b>Novo produto</b> para começar.'}</div></section>`
+    : `<section><div class="empty">${showArchived ? 'Nenhum produto arquivado.' : 'Nenhum produto ainda. Clique em <b>+ Novo produto</b> para começar.'}</div></section>`
 
   const toggle = showArchived
     ? `<a href="/produtos">← Voltar para os produtos ativos</a>`
@@ -387,8 +419,8 @@ export function productsPage(products, { currency, archivedCount, showArchived }
   return layout(
     'Produtos — Tracking',
     'produtos',
-    `<div class="bar"><div><h2 class="title">${showArchived ? 'Produtos arquivados' : 'Produtos'}</h2>
-<p class="sub" style="margin:0">Cada produto tem seu script, sua conversão no Google Ads e sua planilha.</p></div>
+    `<div class="page-head"><div><h2 class="title">${showArchived ? 'Produtos arquivados' : 'Produtos'}</h2>
+<p class="sub">Cada produto tem seu script, sua conversão no Google Ads e sua planilha.</p></div>
 ${showArchived ? '' : '<a class="btn primary" href="/produtos/novo">+ Novo produto</a>'}</div>
 ${cards}<p>${toggle}</p>`,
   )
@@ -414,8 +446,14 @@ export function productFormPage({ product, values, errors = {}, defaultConversio
 <label><b>Nome da conversão no Google Ads</b>
 <input type="text" name="conversion_name" id="conversion_name" value="${esc(v.conversion_name)}" placeholder="${esc(defaultConversion)}" required maxlength="100">
 <div class="hint">É o nome que você vai dar para a ação de conversão no Google Ads. Tem que ser <b>idêntico</b> lá e aqui (maiúsculas, espaços e acentos contam).</div>${err('conversion_name')}</label>
-<label><b>Endereço da página de review</b> <span class="muted">(opcional, usado no teste de instalação)</span>
+<label><b>Endereço da página de review</b> <span class="muted">(usado no teste de instalação)</span>
 <input type="url" name="review_url" value="${esc(v.review_url)}" placeholder="https://meusite.com/produto-review">${err('review_url')}</label>
+<label><b>Link de afiliado da BuyGoods</b> <span class="muted">(o link do botão de compra)</span>
+<input type="url" name="affiliate_url" value="${esc(v.affiliate_url)}" placeholder="https://siteDoProduto.com/dtc/?aff_id=123456">
+<div class="hint">O link que a BuyGoods te dá costuma ir para o site do produtor (ex.: <code>getnervecalm.com/...?aff_id=...</code>). O script reconhece esse domínio e coloca o ID da visita no <code>subid</code>.</div>${err('affiliate_url')}</label>
+<details class="howto"><summary>Avançado: parâmetro do ID da visita</summary>
+<label style="display:block;margin:0 14px 12px"><input type="text" name="tracking_param" value="${esc(v.tracking_param || '')}" placeholder="${esc(DEFAULT_PARAM[v.platform] || 'subid')} (padrão)" maxlength="30">
+<div class="hint">Nome do parâmetro do link de afiliado que leva o ID da visita. BuyGoods: <code>subid</code>. Em outras plataformas pode ser <code>tid</code>, <code>sck</code>, <code>cid</code>, <code>aff_sub</code>... Deixe vazio para usar o padrão.</div>${err('tracking_param')}</label></details>
 <div class="actions"><button class="primary" type="submit">${editing ? 'Salvar alterações' : 'Cadastrar produto'}</button>
 <a class="btn" href="${editing ? `/produtos/${esc(product.id)}` : '/produtos'}">Cancelar</a></div>
 </form></section>`,
@@ -438,12 +476,12 @@ export function checklistHtml(product, st, { tz }) {
     )
     items.push(
       st.ping.links > 0
-        ? item('ok', '✓', 'Links de compra com rastreio', `${st.ping.links} link(s) da BuyGoods encontrados e marcados com o subid.`)
+        ? item('ok', '✓', 'Links de compra com rastreio', `${st.ping.links} link(s) de afiliado encontrados e marcados com o subid.`)
         : item(
             'bad',
             '!',
             'Nenhum link de compra encontrado na página',
-            'O script está lá, mas não achou link da BuyGoods. Sem isso as vendas não são ligadas ao anúncio. Confira se o botão aponta para buygoods.com ou coloque <code>data-rastrear</code> no link.',
+            'O script está lá, mas não achou o link de afiliado. Sem isso as vendas não são ligadas ao anúncio. Cadastre o <b>link de afiliado</b> na aba Configurações ou coloque <code>data-rastrear</code> no link do botão.',
           ),
     )
   } else {
@@ -478,7 +516,18 @@ export function checklistHtml(product, st, { tz }) {
   return `<ul class="check">${items.join('')}</ul>`
 }
 
-export function productPage(product, st, { base, key, tz, currency, flash }) {
+export const PRODUCT_TABS = {
+  status: 'Status',
+  script: '1. Script',
+  buygoods: '2. BuyGoods',
+  google: '3. Google Ads',
+  config: 'Configurações',
+}
+
+const BUYGOODS = 'https://backoffice.buygoods.com'
+
+export function productPage(product, st, { base, key, tz, currency, flash, tab, progress, totals, postbacks, image, errors, values }) {
+  const pid = esc(product.id)
   const script = `<script src="${base}/t.js?p=${product.id}" async></script>`
   const postback = `${base}/postback?key=${key}&subid={SUBID}&order={ORDERID}&amount={COMMISSION_AMOUNT}&type={CONV_TYPE}&product={PRODUCT_CODENAME}`
   const csv = `${base}/google-ads.csv?key=${key}&produto=${product.id}`
@@ -487,82 +536,238 @@ export function productPage(product, st, { base, key, tz, currency, flash }) {
     ? product.review_url + (product.review_url.includes('?') ? '&' : '?') + 'rt_teste=1'
     : ''
   const flashHtml = flash ? `<div class="flash ${flash.bad ? 'bad' : ''}">${esc(flash.text)}</div>` : ''
+  const tabDone = { script: progress.steps[0].done && progress.steps[1].done, buygoods: progress.steps[2].done, google: progress.steps[3].done }
+  const platformName = PLATFORMS[product.platform] || 'Plataforma'
+  const isBuyGoods = product.platform === 'buygoods'
+  const param = trackingParam(product)
+  const tabs = Object.entries({ ...PRODUCT_TABS, buygoods: `2. ${isBuyGoods ? 'BuyGoods' : 'Plataforma'}` })
+    .map(
+      ([k, v]) =>
+        `<a href="/produtos/${pid}?aba=${k}" class="${k === tab ? 'on' : ''}">${v}${k in tabDone ? (tabDone[k] ? ' <span class="dot ok">✓</span>' : ' <span class="dot"></span>') : ''}</a>`,
+    )
+    .join('')
+  const next = progress.steps.find((s) => !s.done)
+  const nextTab = next && { script: 'script', links: 'script', postback: 'buygoods', planilha: 'google', google: 'google' }[next.key]
+
+  const img = image
+    ? `<img class="pimg" src="/produtos/${pid}/imagem?v=${encodeURIComponent(image.updated_at)}" alt="${esc(product.name)}">`
+    : `<span class="pimg ph">${esc(product.name.trim()[0]?.toUpperCase() || '?')}</span>`
+
+  let body = ''
+  if (tab === 'status') {
+    body = `<div class="grid2">
+<section><h3>Status da configuração <span class="right">atualiza sozinho</span></h3><div id="checklist">${checklistHtml(product, st, { tz })}</div></section>
+<div>
+<section><h3>Próximo passo</h3><div class="box">${
+      next
+        ? `<p><b>${esc(next.label)}</b></p><p class="muted">Faltam ${progress.total - progress.done} de ${progress.total} etapas.</p><a class="btn primary" href="/produtos/${pid}?aba=${nextTab}">Ir para ${esc(PRODUCT_TABS[nextTab])}</a>`
+        : '<p class="ok"><b>✓ Tudo configurado.</b></p><p class="muted">As vendas deste produto estão indo para o Google Ads.</p>'
+    }</div></section>
+<section><h3>Resultados (todo o período)</h3><div class="box mini-kpis">
+<div><span>Visitas</span><b>${totals.visitas}</b></div><div><span>Vendas</span><b>${totals.vendas}</b></div><div><span>Comissão</span><b>${money(totals.comissao, currency)}</b></div>
+</div><div class="box" style="padding-top:0"><a href="/?periodo=30d&produto=${pid}">Ver no painel →</a></div></section>
+</div></div>`
+  } else if (tab === 'script') {
+    body = `<section><h3><span class="num">1</span> Copie o script</h3><div class="box">
+${copy('script', script, 'Copiar script')}
+<p class="muted">É uma linha só e você cola uma vez. Quando o rastreador é atualizado, a página passa a usar a versão nova sozinha.</p></div></section>
+
+<section><h3><span class="num">2</span> Cole na página de review e publique</h3><div class="box">
+<p>Pode ser no cabeçalho, no rodapé ou antes do <code>&lt;/body&gt;</code>, mas tem que ser num campo de <b>código/HTML</b>. Num bloco de texto comum o código não roda.</p>
+<details class="howto"><summary>WordPress</summary><ol><li>Instale o plugin <a href="https://wordpress.org/plugins/insert-headers-and-footers/" target="_blank" rel="noopener">WPCode</a> (Plugins → Adicionar novo → “WPCode”).</li><li>Vá em <b>Code Snippets → Header &amp; Footer</b>, cole o script no campo <b>Footer</b> e salve.</li><li>Se usa cache (LiteSpeed, WP Rocket, Cloudflare), <b>limpe o cache</b>.</li></ol><p class="muted">No Elementor dá também para arrastar um widget <b>HTML</b> para a página e colar dentro dele.</p></details>
+<details class="howto"><summary>Construtor de sites da Hostinger</summary><ol><li>No editor, abra <b>Configurações do site → Integrações</b> (ou “Código personalizado”).</li><li>Cole o script no campo de código e salve.</li><li>Clique em <b>Publicar</b>.</li></ol></details>
+<details class="howto"><summary>Página em HTML (arquivo)</summary><ol><li>Abra o arquivo da página e cole o script logo antes de <code>&lt;/body&gt;</code>.</li><li>Suba o arquivo de novo.</li></ol></details>
+<details class="howto"><summary>Lovable, Framer, outros</summary><p>Procure “custom code”, “código personalizado”, “head/body code” ou “embed HTML”. No Lovable, peça no chat: “adicione este script antes do &lt;/body&gt; em todas as páginas” e cole o script.</p></details>
+</div></section>
+
+<section><h3><span class="num">3</span> Teste</h3><div class="box">
+${
+  testUrl
+    ? `<p>Clique em <b>Testar instalação</b>: sua página abre numa aba nova e, em poucos segundos, aparece aqui se funcionou.</p>
+<div class="actions"><button type="button" class="primary" id="test-install" data-url="${esc(testUrl)}">Testar instalação</button>
+<button type="button" id="verify">Verificar o código da página</button></div>`
+    : `<p>Informe o endereço da página de review para poder testar.</p><a class="btn primary" href="/produtos/${pid}?aba=config">Informar endereço</a>`
+}
+<div id="test-status"></div><div id="verify-result"></div>
+<p class="muted" style="margin-top:12px">O script reconhece sozinho o link de afiliado: o domínio do link cadastrado em Configurações${product.affiliate_url ? ` (<b>${esc(product.affiliate_url.replace(/^https?:\/\//, '').split('/')[0])}</b>)` : ''}, links com <code>aff_id=</code> (formato da BuyGoods) e links para buygoods. Ele coloca o ID da visita no parâmetro <code>${esc(param)}</code>${param === 'subid' ? '; se o link já tinha um subid fixo (ex.: <code>adsgoogle</code>), esse valor passa para o <code>subid2</code>' : ''}. Link encurtado: coloque <code>data-rastrear</code> nele.</p>
+</div></section>`
+  } else if (tab === 'buygoods' && !isBuyGoods) {
+    const generic = `${base}/postback?key=${key}&subid=[ID DA VISITA]&order=[NÚMERO DO PEDIDO]&amount=[COMISSÃO]&type=[TIPO DO EVENTO]`
+    body = `<div class="flash" style="background:var(--accent-soft);color:var(--text)">Para outra plataforma, o funcionamento é o mesmo: o script coloca o ID da visita no parâmetro <code>${esc(param)}</code> do link de afiliado, e a plataforma devolve esse ID no postback quando a venda acontece.</div>
+<section><h3><span class="num">1</span> Confira o parâmetro do link</h3><div class="box">
+<p>Descubra na documentação da plataforma qual parâmetro do link de afiliado é devolvido no postback (ex.: ClickBank usa <code>tid</code>; muitas redes usam <code>subid</code>, <code>sub1</code> ou <code>aff_sub</code>).</p>
+<p>Hoje este produto usa <b><code>${esc(param)}</code></b>. Para trocar: aba <a href="/produtos/${pid}?aba=config">Configurações → Avançado</a>.</p></div></section>
+<section><h3><span class="num">2</span> Monte o postback</h3><div class="box">
+<p>Cadastre na plataforma a URL abaixo, trocando cada parte entre colchetes pela variável (macro) que a plataforma usa:</p>
+${copy('postback', generic, 'Copiar modelo')}
+<table><tbody>
+<tr><td><code>[ID DA VISITA]</code></td><td>a variável que devolve o valor do parâmetro <code>${esc(param)}</code> (obrigatório)</td></tr>
+<tr><td><code>[NÚMERO DO PEDIDO]</code></td><td>ID da transação/pedido (evita contar duas vezes)</td></tr>
+<tr><td><code>[COMISSÃO]</code></td><td>valor da sua comissão (vai para o Google Ads)</td></tr>
+<tr><td><code>[TIPO DO EVENTO]</code></td><td>venda, reembolso... (opcional; reembolsos saem da planilha)</td></tr></tbody></table>
+<p class="muted" style="margin-top:10px">O rastreador também aceita os nomes <code>clickid</code>, <code>cid</code> ou <code>s1</code> no lugar de <code>subid</code>, e <code>commission</code>, <code>payout</code> ou <code>sum</code> no lugar de <code>amount</code>.</p></div></section>
+<section><h3><span class="num">3</span> Confira o que está chegando</h3>
+${table(
+  [
+    { label: 'Quando', html: (r) => esc(when(r.created_at, tz)) },
+    { label: 'Tipo', html: (r) => esc(r.type) },
+    { label: 'Pedido', html: (r) => esc(r.order_id) },
+    { label: 'Ligada a', html: (r) => (r.produto ? `<span class="tag ok">${esc(r.produto)}</span>` : r.visita ? '<span class="tag warn">visita sem produto</span>' : r.subid ? '<span class="tag warn">ID sem visita registrada</span>' : '<span class="tag bad">sem ID</span>') },
+    { label: 'Comissão', n: 1, html: (r) => money(r.amount, currency) },
+  ],
+  postbacks,
+  'Nenhum postback recebido ainda.',
+)}</section>`
+  } else if (tab === 'buygoods') {
+    const pbRows = table(
+      [
+        { label: 'Quando', html: (r) => esc(when(r.created_at, tz)) },
+        { label: 'Tipo', html: (r) => esc(r.type) },
+        { label: 'Pedido', html: (r) => esc(r.order_id) },
+        { label: 'Produto BuyGoods', html: (r) => esc(r.codename || '—') },
+        {
+          label: 'Ligada a',
+          html: (r) =>
+            r.produto
+              ? `<span class="tag ok">${esc(r.produto)}</span>`
+              : r.visita
+                ? '<span class="tag warn">visita sem produto (script antigo)</span>'
+                : r.subid
+                  ? '<span class="tag warn">subid sem visita registrada</span>'
+                  : '<span class="tag bad">sem subid</span>',
+        },
+        { label: 'Comissão', n: 1, html: (r) => money(r.amount, currency) },
+      ],
+      postbacks,
+      'Nenhum postback recebido ainda. Depois de cadastrar, a primeira venda aparece aqui.',
+    )
+    body = `<div class="flash" style="background:var(--accent-soft);color:var(--text)">A BuyGoods avisa o rastreador de cada venda pelo <b>postback</b>. Ele é configurado <b>uma vez só</b> e vale para todos os produtos. A venda cai no produto certo pela visita que gerou ela.</div>
+
+<section><h3><span class="num">1</span> Entre no painel de afiliado da BuyGoods</h3><div class="box">
+<p><a class="btn" href="${BUYGOODS}" target="_blank" rel="noopener">Abrir painel da BuyGoods ↗</a> <a class="btn" href="${BUYGOODS}/faq" target="_blank" rel="noopener">FAQ da BuyGoods ↗</a></p>
+<p class="muted">Faça login com a sua conta de afiliado.</p></div></section>
+
+<section><h3><span class="num">2</span> Cadastre o postback (uma vez, para todos os produtos)</h3><div class="box">
+<ol><li>No painel, abra o menu da sua conta (canto superior direito) e entre em <b>Postback Pixels</b>. Em algumas contas o caminho é <b>Profile → Postback Pixels</b>.</li>
+<li>Clique em <b>Add New</b>, cole a URL abaixo e salve.</li></ol>
+${copy('postback', postback, 'Copiar postback')}
+<p class="warn"><b>Não</b> cadastre o mesmo postback também dentro das configurações de uma oferta: a BuyGoods dispara duas vezes. O rastreador ignora pedido repetido, mas o certo é ter só o global.</p>
+<details class="howto"><summary>O que cada parte da URL significa</summary><table><tbody>
+<tr><td><code>{SUBID}</code></td><td>ID da visita que o script colocou no link. É assim que a venda é ligada ao anúncio.</td></tr>
+<tr><td><code>{ORDERID}</code></td><td>Número do pedido (evita contar a mesma venda duas vezes).</td></tr>
+<tr><td><code>{COMMISSION_AMOUNT}</code></td><td>Sua comissão. É o valor que vai para o Google Ads.</td></tr>
+<tr><td><code>{CONV_TYPE}</code></td><td>Tipo do evento (venda, reembolso...). Reembolsos saem da planilha do Google.</td></tr>
+<tr><td><code>{PRODUCT_CODENAME}</code></td><td>Código do produto na BuyGoods (só para conferência).</td></tr>
+<tr><td><code>key=...</code></td><td>Sua chave secreta. Não compartilhe a URL.</td></tr></tbody></table></details>
+</div></section>
+
+<section><h3><span class="num">3</span> Pegue o link de afiliado e coloque no botão da página</h3><div class="box">
+<ol><li>No painel da BuyGoods, encontre a oferta (Marketplace / Campaigns) e clique em <b>Promote</b>.</li>
+<li>Copie o <b>link de afiliado</b> e coloque nos botões de compra da página de review.</li>
+<li>Cole esse mesmo link no campo <b>Link de afiliado</b> da aba <a href="/produtos/${pid}?aba=config">Configurações</a>.</li>
+<li><b>Não precisa</b> mexer no <code>subid</code>: o script coloca o ID da visita sozinho. O link da BuyGoods costuma ir direto para o site do produtor (ex.: <code>getnervecalm.com/dtc/?aff_id=...</code>); isso é normal e funciona.</li></ol>
+<p class="muted">Evite encurtadores. Se precisar usar, coloque <code>data-rastrear</code> no link. Confira na aba <a href="/produtos/${pid}?aba=script">1. Script</a> se o teste encontra os links.</p>
+</div></section>
+
+<section><h3><span class="num">4</span> Confira o que está chegando</h3>
+${pbRows}
+<div class="box"><p class="muted">Quer testar sem esperar uma venda? Abra a página pelo <b>Testar instalação</b> (aba Script) e depois simule. A venda de teste não vai para o Google Ads nem entra nos totais.</p>
+<form method="post" action="/produtos/${pid}/simular-venda" class="actions"><button type="submit">Simular venda de teste</button></form>
+${st.lastSale && st.lastSale.status === 'test' ? `<p class="ok">✓ Venda de teste ligada a este produto ${ago(st.lastSale.created_at)}.</p>` : ''}</div></section>`
+  } else if (tab === 'google') {
+    body = `<section><h3><span class="num">1</span> Nome da conversão</h3><div class="box">
+<form class="conv" method="post" action="/produtos/${pid}/conversao">
+<div class="row"><input type="text" id="conv-input" name="conversion_name" value="${esc(product.conversion_name)}" required maxlength="100" aria-label="Nome da conversão">
+<button type="submit">Salvar nome</button><button type="button" data-copy-input="conv-input">Copiar nome</button></div>
+<div class="hint">As vendas deste produto vão para o Google Ads com este nome. Tem que ser <b>idêntico</b> ao nome da ação de conversão lá (maiúsculas, espaços e acentos contam).</div>
+${st.lastRealSale ? `<div class="hint warn">Atenção: este produto já tem vendas. Se o Google Ads já importou vendas com o nome atual, trocar o nome faz ele importar de novo as vendas dos últimos dias na conversão nova (contagem em dobro). Troque só para corrigir um nome que ainda não existe no Google Ads.</div>` : ''}
+</form></div></section>
+
+<section><h3><span class="num">2</span> Crie a ação de conversão no Google Ads</h3><div class="box">
+<p><a class="btn" href="https://ads.google.com/aw/conversions" target="_blank" rel="noopener">Abrir Conversões no Google Ads ↗</a></p>
+<ol><li>Clique em <b>+ Nova ação de conversão → Importar → Conversões de cliques (arquivo/programação)</b>.</li>
+<li>Nome: o nome do passo 1. Categoria: <b>Compra</b>. Valor: <b>“Usar valores diferentes para cada conversão”</b>. Contagem: <b>Todas</b>.</li></ol>
+<p class="muted"><a href="https://support.google.com/google-ads/answer/7014069" target="_blank" rel="noopener">Ajuda do Google: importar conversões de cliques ↗</a></p></div></section>
+
+<section><h3><span class="num">3</span> Programe a planilha</h3><div class="box">
+<ol><li>Em <b>Conversões → Uploads → Programações → +</b>, escolha a fonte <b>HTTPS</b>.</li>
+<li>Cole o link abaixo e escolha <b>a cada 6 horas</b>.</li></ol>
+${copy('csv', csv, 'Copiar link')}
+<p class="muted">A planilha deste produto tem ${st.salesForGoogle} venda(s) com gclid. ${st.csvFetch ? `<span class="ok">Lida pelo Google ${ago(st.csvFetch.at)}.</span>` : 'Ainda não foi lida pelo Google.'} <a href="/google-ads.csv?key=${esc(key)}&produto=${pid}" target="_blank">Ver a planilha</a></p></div></section>
+
+<section><h3><span class="num">4</span> Configure a conta (uma vez por conta)</h3><div class="box">
+<p><a class="btn" href="https://ads.google.com/aw/accountsettings" target="_blank" rel="noopener">Abrir Configurações da conta ↗</a></p>
+<ol><li>Deixe a <b>codificação automática</b> ativada (é ela que coloca o gclid na URL). <a href="https://support.google.com/google-ads/answer/3095550" target="_blank" rel="noopener">Ajuda ↗</a></li>
+<li>Em <b>Rastreamento → Sufixo do URL final</b>, cole:</li></ol>
+${copy('suffix', suffix)}</div></section>`
+  } else {
+    const v = values || product
+    const err = (k) => (errors?.[k] ? `<div class="err">${esc(errors[k])}</div>` : '')
+    const platformOptions = Object.entries(PLATFORMS)
+      .map(([k, label]) => `<option value="${k}" ${v.platform === k ? 'selected' : ''}>${label}</option>`)
+      .join('')
+    body = `<section><h3>Dados do produto</h3><form class="form" method="post" action="/produtos/${pid}">
+<label><b>Nome do produto</b><input type="text" name="name" value="${esc(v.name)}" required maxlength="100">${err('name')}</label>
+<label><b>Plataforma</b><select name="platform">${platformOptions}</select>${err('platform')}</label>
+<label><b>Nome da conversão no Google Ads</b><input type="text" name="conversion_name" value="${esc(v.conversion_name)}" required maxlength="100">${err('conversion_name')}</label>
+<label><b>Endereço da página de review</b><input type="url" name="review_url" value="${esc(v.review_url)}" placeholder="https://meusite.com/produto-review">${err('review_url')}</label>
+<label><b>Link de afiliado da BuyGoods</b><input type="url" name="affiliate_url" value="${esc(v.affiliate_url)}" placeholder="https://siteDoProduto.com/dtc/?aff_id=123456">
+<div class="hint">O link do botão de compra. O script reconhece o domínio dele e coloca o ID da visita no <code>${esc(trackingParam(product))}</code>.</div>${err('affiliate_url')}</label>
+<details class="howto"><summary>Avançado: parâmetro do ID da visita</summary>
+<label style="display:block;margin:0 14px 12px"><input type="text" name="tracking_param" value="${esc(v.tracking_param || '')}" placeholder="${esc(DEFAULT_PARAM[v.platform] || 'subid')} (padrão)" maxlength="30">
+<div class="hint">Nome do parâmetro do link de afiliado que leva o ID da visita. BuyGoods: <code>subid</code>. Em outras plataformas pode ser <code>tid</code>, <code>sck</code>, <code>cid</code>, <code>aff_sub</code>... Deixe vazio para usar o padrão.</div>${err('tracking_param')}</label></details>
+<div class="actions"><button class="primary" type="submit">Salvar alterações</button></div></form></section>
+
+<section><h3>Imagem do produto</h3><div class="box">
+<div class="imgrow">${img}<div><p class="muted">PNG, JPG ou WEBP. A imagem é reduzida automaticamente.</p>
+<div class="actions"><button type="button" class="primary" data-pick-image>${image ? 'Trocar imagem' : 'Enviar imagem'}</button>
+${image ? `<form method="post" action="/produtos/${pid}/imagem/remover" data-confirm="Remover a imagem?"><button type="submit" class="danger">Remover</button></form>` : ''}</div></div></div></div></section>
+
+<section><h3>Arquivar</h3><div class="box">
+<p class="muted">Arquivar esconde o produto da lista. Visitas e vendas continuam guardadas e o script continua funcionando.</p>
+<form method="post" action="/produtos/${pid}/${product.archived ? 'reativar' : 'arquivar'}" ${product.archived ? '' : 'data-confirm="Arquivar este produto?"'}>
+<button type="submit" class="${product.archived ? '' : 'danger'}">${product.archived ? 'Reativar produto' : 'Arquivar produto'}</button></form>
+</div></section>`
+  }
 
   return layout(
     `${product.name} — Tracking`,
     'produtos',
-    `${flashHtml}<div class="bar"><div><h2 class="title">${esc(product.name)}</h2>
-<p class="sub" style="margin:0">${esc(PLATFORMS[product.platform] || product.platform)} · conversão <b>${esc(product.conversion_name)}</b>${product.archived ? ' · <span class="tag warn">arquivado</span>' : ''}</p></div>
-<div class="actions" style="margin:0"><a class="btn" href="/?periodo=30d&produto=${esc(product.id)}">Ver resultados</a><a class="btn" href="/produtos/${esc(product.id)}/editar">Editar</a></div></div>
-
-<section><h3>Status da configuração <span class="muted" style="font-weight:400;font-size:12px">atualiza sozinho</span></h3>
-<div id="checklist">${checklistHtml(product, st, { tz })}</div></section>
-
-<section><h3><span class="num">1</span> Instalar o script na página de review</h3><div class="box">
-<p>Cole este código na página de review deste produto. Pode ser no cabeçalho, no rodapé ou antes do <code>&lt;/body&gt;</code>, mas tem que ser num campo de <b>código/HTML</b> (no WordPress: plugin WPCode ou widget HTML do Elementor; na Hostinger: Configurações do site → Código personalizado). Depois <b>publique</b> a página.</p>
-${copy('script', script, 'Copiar script')}
-<div class="actions">
-${
-  testUrl
-    ? `<button type="button" class="primary" id="test-install" data-url="${esc(testUrl)}">Testar instalação</button>
-<button type="button" id="verify">Verificar o código da página</button>`
-    : `<a class="btn primary" href="/produtos/${esc(product.id)}/editar">Informe o endereço da página para testar</a>`
-}
-</div>
-<div id="test-status"></div>
-<div id="verify-result"></div>
-<p class="muted">Todo link para <b>buygoods</b> recebe o <code>subid</code> sozinho. Se o botão de compra usa outro domínio (ex.: link encurtado), coloque o atributo <code>data-rastrear</code> nesse link.</p>
-</div></section>
-
-<section><h3><span class="num">2</span> BuyGoods — postback</h3><div class="box">
-<p>Na BuyGoods, em <b>Postback Pixels</b>, cadastre esta URL. <b>É a mesma para todos os produtos</b>: se já cadastrou uma vez, não precisa de novo.</p>
-${copy('postback', postback)}
-<p class="muted">Quer conferir que a venda cai neste produto? Abra a página pelo <b>Testar instalação</b> e depois clique abaixo. A venda de teste não vai para o Google Ads nem entra nos totais.</p>
-<form method="post" action="/produtos/${esc(product.id)}/simular-venda" class="actions">
-<button type="submit">Simular venda de teste</button></form>
-${st.lastSale && st.lastSale.status === 'test' ? `<p class="ok">✓ Venda de teste ligada a este produto ${ago(st.lastSale.created_at)}.</p>` : ''}
-</div></section>
-
-<section id="google-ads"><h3><span class="num">3</span> Google Ads</h3><div class="box">
-<form class="conv" method="post" action="/produtos/${esc(product.id)}/conversao">
-<label for="conv-input"><b>Nome da conversão</b></label>
-<div class="row"><input type="text" id="conv-input" name="conversion_name" value="${esc(product.conversion_name)}" required maxlength="100">
-<button type="submit">Salvar nome</button><button type="button" data-copy-input="conv-input">Copiar nome</button></div>
-<div class="hint">As vendas deste produto vão para o Google Ads com este nome. Tem que ser <b>idêntico</b> ao nome da ação de conversão lá (maiúsculas, espaços e acentos contam).</div>
-${st.lastRealSale ? `<div class="hint warn">Atenção: este produto já tem vendas. Se o Google Ads já importou vendas com o nome atual, trocar o nome faz ele importar de novo as vendas dos últimos dias na conversão nova (contagem em dobro). Troque só para corrigir um nome que ainda não existe no Google Ads.</div>` : ''}
-</form>
-<ol>
-<li>Em <b>Metas → Conversões → Resumo → + Nova ação de conversão → Importar → Arquivo/programação → Conversões de cliques</b>, crie a ação com o nome acima.
-Categoria <b>Compra</b>, valor <b>"Usar valores diferentes para cada conversão"</b>, contagem <b>Todas</b> (para contar upsells).</li>
-<li>Em <b>Metas → Conversões → Uploads → Programações → +</b>, escolha a fonte <b>HTTPS</b>, cole o link abaixo e escolha a frequência <b>a cada 6 horas</b>:
-${copy('csv', csv, 'Copiar link')}</li>
-<li>Em <b>Admin → Configurações da conta</b>, deixe a <b>codificação automática</b> ativada e, em <b>Rastreamento → Sufixo do URL final</b>, cole (uma vez por conta):
-${copy('suffix', suffix)}</li>
-</ol>
-<p class="muted">A planilha deste produto tem ${st.salesForGoogle} venda(s) com gclid nos últimos dias. <a href="/google-ads.csv?key=${esc(key)}&produto=${esc(product.id)}" target="_blank">Ver a planilha</a></p>
-</div></section>
-
-<section><h3>Arquivar</h3><div class="box">
-<p class="muted">Arquivar esconde o produto da lista. Visitas e vendas continuam guardadas e o script continua funcionando.</p>
-<form method="post" action="/produtos/${esc(product.id)}/${product.archived ? 'reativar' : 'arquivar'}" ${product.archived ? '' : 'data-confirm="Arquivar este produto?"'}>
-<button type="submit" class="${product.archived ? '' : 'danger'}">${product.archived ? 'Reativar produto' : 'Arquivar produto'}</button></form>
-</div></section>`,
+    `${flashHtml}<div class="phead">
+<button type="button" class="imgbtn" data-pick-image title="${image ? 'Trocar imagem' : 'Adicionar imagem'}">${img}<span class="imgedit">${image ? 'Trocar' : '+ Imagem'}</span></button>
+<div class="phead-main"><div class="crumbs"><a href="/produtos">Produtos</a> /</div><h2 class="title">${esc(product.name)}${product.archived ? ' <span class="tag warn">arquivado</span>' : ''}</h2>
+<p class="sub">${esc(PLATFORMS[product.platform] || product.platform)} · conversão <b>${esc(product.conversion_name)}</b></p></div>
+<div class="phead-prog">${progressBar(progress)}<small class="muted">${progress.done} de ${progress.total} etapas</small></div></div>
+<input type="file" id="image-file" accept="image/png,image/jpeg,image/webp" hidden>
+<nav class="tabs ptabs">${tabs}</nav>
+${body}`,
     `
 const pid=${JSON.stringify(product.id)};
-setInterval(async()=>{try{const r=await fetch('/produtos/'+pid+'/checklist');if(r.ok)document.getElementById('checklist').innerHTML=await r.text()}catch(e){}},4000);
+const cl=document.getElementById('checklist');
+if(cl)setInterval(async()=>{try{const r=await fetch('/produtos/'+pid+'/checklist');if(r.ok)cl.innerHTML=await r.text()}catch(e){}},4000);
+const fileIn=document.getElementById('image-file');
+document.querySelectorAll('[data-pick-image]').forEach(b=>b.addEventListener('click',()=>fileIn.click()));
+fileIn.addEventListener('change',async()=>{const f=fileIn.files[0];if(!f)return;
+if(!/^image\\/(png|jpeg|webp)$/.test(f.type)){alert('Use uma imagem PNG, JPG ou WEBP.');return}
+try{const bmp=await createImageBitmap(f);const s=Math.min(1,600/Math.max(bmp.width,bmp.height));
+const c=document.createElement('canvas');c.width=Math.round(bmp.width*s);c.height=Math.round(bmp.height*s);
+c.getContext('2d').drawImage(bmp,0,0,c.width,c.height);let data=c.toDataURL('image/webp',0.85);
+if(!data.startsWith('data:image/webp'))data=c.toDataURL('image/jpeg',0.85);
+const r=await fetch('/produtos/'+pid+'/imagem',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({data})});
+const j=await r.json();if(!r.ok)throw new Error(j.error||'erro');location.reload()}catch(e){alert('Não consegui enviar a imagem: '+e.message)}});
 const tb=document.getElementById('test-install');
 if(tb)tb.addEventListener('click',()=>{window.open(tb.dataset.url,'_blank','noopener');
 const out=document.getElementById('test-status'),t0=Date.now();let timer;
 const tick=async()=>{const secs=Math.round((Date.now()-t0)/1000);
 try{const r=await(await fetch('/produtos/'+pid+'/sinal')).json();
 if(r.pingAt&&new Date(r.pingAt).getTime()>=t0-3000){clearInterval(timer);
-out.innerHTML=r.links>0?'<span class="ok"><b>✓ Funcionou!</b> O script está rodando na página e marcou '+r.links+' link(s) da BuyGoods.</span>'
-:'<span class="bad"><b>! O script está rodando, mas não achou nenhum link da BuyGoods.</b> Confira se o botão aponta para buygoods.com ou coloque data-rastrear no link de compra.</span>';return}
+out.innerHTML=r.links>0?'<span class="ok"><b>✓ Funcionou!</b> O script está rodando na página e marcou '+r.links+' link(s) de afiliado.</span>'
+:'<span class="bad"><b>! O script está rodando, mas não achou o link de afiliado.</b> Cadastre o link de afiliado na aba Configurações ou coloque data-rastrear no link de compra.</span>';return}
 if(secs>=30){clearInterval(timer);out.innerHTML='<span class="bad"><b>✗ Nenhum sinal da página em 30 segundos.</b></span><br><span class="muted">Causas mais comuns, nesta ordem:</span><ol class="muted" style="margin:4px 0 0">'
 +(r.https&&!r.https.ok?'<li class="bad"><b>HTTPS do rastreador com problema</b>: '+r.https.reason+'. Isso bloqueia o script em qualquer página. Resolva primeiro (veja o aviso no topo).</li>':'')
 +'<li>A página não foi <b>publicada</b> depois de colar o código, ou o site está mostrando uma versão em <b>cache</b> (limpe o cache do WordPress/LiteSpeed/Cloudflare).</li>'
 +'<li>O código foi colado num bloco de <b>texto</b> e não num campo de <b>código/HTML</b>. Clique em “Verificar o código da página” para conferir.</li>'
-+'<li>O endereço cadastrado não é a página onde você colou o código (Editar → endereço da página).</li>'
++'<li>O endereço cadastrado não é a página onde você colou o código (aba Configurações).</li>'
 +'<li>Um <b>bloqueador de anúncios</b> no seu navegador bloqueou o script. Teste numa aba anônima sem extensões.</li>'
 +'<li>Se usa <b>cloaker</b>, você pode estar vendo a página segura, sem o script.</li></ol>';return}}catch(e){}
 out.innerHTML='<span class="muted">Aguardando sinal da página… '+secs+'s (deixe a aba nova abrir e carregar)</span>'};
