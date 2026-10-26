@@ -188,7 +188,7 @@ export function setupProgress(st) {
   const steps = [
     { key: 'script', label: 'Script instalado', done: Boolean(st.ping) },
     { key: 'links', label: 'Links de compra marcados', done: Boolean(st.ping && st.ping.links > 0) },
-    { key: 'postback', label: 'Postback da BuyGoods', done: Boolean(st.lastRealSale || st.anyPostback) },
+    { key: 'postback', label: 'Postback da conta', done: Boolean(st.lastRealSale || st.anyPostback) },
     { key: 'planilha', label: 'Google Ads lendo a planilha', done: Boolean(st.csvFetch) },
     { key: 'google', label: 'Visita vinda do anúncio', done: Boolean(st.lastGoogleVisit) },
   ]
@@ -244,15 +244,16 @@ export function productStatus(db, product) {
 
 // Últimos postbacks recebidos (de qualquer produto), para conferir o que a
 // BuyGoods está mandando.
-export function recentPostbacks(db, limit = 10) {
+export function recentPostbacks(db, limit = 10, productId = null) {
   return db
     .prepare(
       `SELECT v.id, v.created_at, v.type, v.order_id, v.amount, v.status, v.subid, v.product AS codename,
               p.name AS produto, c.id AS visita
          FROM conversions v LEFT JOIN clicks c ON c.id = v.subid LEFT JOIN products p ON p.id = c.product_id
+        WHERE (? IS NULL OR c.product_id = ?)
         ORDER BY v.created_at DESC, v.id DESC LIMIT ?`,
     )
-    .all(limit)
+    .all(productId, productId, limit)
 }
 
 // Último sinal de que o postback está chegando: uma venda real ou um teste

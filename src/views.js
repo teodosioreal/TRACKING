@@ -528,13 +528,13 @@ export function checklistHtml(product, st, { tz }) {
   )
 
   if (st.lastRealSale) {
-    items.push(item('ok', '✓', 'Venda recebida da BuyGoods', `Última venda deste produto ${ago(st.lastRealSale.created_at)}.`))
+    items.push(item('ok', '✓', 'Venda recebida', `Última venda deste produto ${ago(st.lastRealSale.created_at)}.`))
   } else if (st.anyPostback) {
     items.push(
-      item('warn', '4', 'Venda recebida da BuyGoods', `O postback está funcionando (último ${ago(st.anyPostback.created_at)}), mas ainda não houve venda deste produto.`),
+      item('ok', '✓', 'Postback da conta funcionando', `Último ${ago(st.anyPostback.created_at)}. Ainda não houve venda deste produto.`),
     )
   } else {
-    items.push(item('wait', '4', 'Venda recebida da BuyGoods', 'Nenhum postback recebido ainda. Confira o passo 2.'))
+    items.push(item('wait', '4', 'Postback da conta', 'Nenhum postback recebido ainda. Configure uma vez em <a href="/configuracoes#postback-conta">Configurações → Postback da conta</a>.'))
   }
 
   items.push(
@@ -603,7 +603,7 @@ function scriptSteps() {
 export const PRODUCT_TABS = {
   status: 'Status',
   script: '1. Script',
-  buygoods: '2. BuyGoods',
+  buygoods: '2. Venda',
   google: '3. Google Ads',
   config: 'Configurações',
 }
@@ -622,7 +622,7 @@ export function productPage(product, st, { base, key, tz, currency, flash, tab, 
   const platformName = PLATFORMS[product.platform] || 'Plataforma'
   const isBuyGoods = product.platform === 'buygoods'
   const param = trackingParam(product)
-  const tabs = Object.entries({ ...PRODUCT_TABS, buygoods: `2. ${isBuyGoods ? 'BuyGoods' : 'Plataforma'}` })
+  const tabs = Object.entries(PRODUCT_TABS)
     .map(
       ([k, v]) =>
         `<a href="/produtos/${pid}?aba=${k}" class="${k === tab ? 'on' : ''}">${v}${k in tabDone ? (tabDone[k] ? ' <span class="dot ok">✓</span>' : ' <span class="dot"></span>') : ''}</a>`,
@@ -710,95 +710,43 @@ ${
 }
 <p class="muted" style="margin-top:12px">O script reconhece sozinho o link de afiliado: o domínio do link cadastrado em Configurações${product.affiliate_url ? ` (<b>${esc(product.affiliate_url.replace(/^https?:\/\//, '').split('/')[0])}</b>)` : ''}, links com <code>aff_id=</code> (formato da BuyGoods) e links para buygoods. Ele coloca o ID da visita no parâmetro <code>${esc(param)}</code>${param === 'subid' ? '; se o link já tinha um subid fixo (ex.: <code>adsgoogle</code>), esse valor passa para o <code>subid2</code>' : ''}. Link encurtado: coloque <code>data-rastrear</code> nele.</p>
 </div></section>`
-  } else if (tab === 'buygoods' && !isBuyGoods) {
-    const generic = `${base}/postback?key=${key}&subid=[ID DA VISITA]&order=[NÚMERO DO PEDIDO]&amount=[COMISSÃO]&type=[TIPO DO EVENTO]`
-    body = `<div class="flash" style="background:var(--accent-soft);color:var(--text)">Para outra plataforma, o funcionamento é o mesmo: o script coloca o ID da visita no parâmetro <code>${esc(param)}</code> do link de afiliado, e a plataforma devolve esse ID no postback quando a venda acontece.</div>
-<section><h3><span class="num">1</span> Confira o parâmetro do link</h3><div class="box">
-<p>Descubra na documentação da plataforma qual parâmetro do link de afiliado é devolvido no postback (ex.: ClickBank usa <code>tid</code>; muitas redes usam <code>subid</code>, <code>sub1</code> ou <code>aff_sub</code>).</p>
-<p>Hoje este produto usa <b><code>${esc(param)}</code></b>. Para trocar: aba <a href="/produtos/${pid}?aba=config">Configurações → Avançado</a>.</p></div></section>
-<section><h3><span class="num">2</span> Monte o postback</h3><div class="box">
-<p>Cadastre na plataforma a URL abaixo, trocando cada parte entre colchetes pela variável (macro) que a plataforma usa:</p>
-${copy('postback', generic, 'Copiar modelo')}
-<table><tbody>
-<tr><td><code>[ID DA VISITA]</code></td><td>a variável que devolve o valor do parâmetro <code>${esc(param)}</code> (obrigatório)</td></tr>
-<tr><td><code>[NÚMERO DO PEDIDO]</code></td><td>ID da transação/pedido (evita contar duas vezes)</td></tr>
-<tr><td><code>[COMISSÃO]</code></td><td>valor da sua comissão (vai para o Google Ads)</td></tr>
-<tr><td><code>[TIPO DO EVENTO]</code></td><td>venda, reembolso... (opcional; reembolsos saem da planilha)</td></tr></tbody></table>
-<p style="margin-top:12px">Se a plataforma tiver botão de teste do postback, clique nele. O aviso aparece aqui:</p>
-${LIVE}
-<p class="muted" style="margin-top:10px">O rastreador também aceita os nomes <code>clickid</code>, <code>cid</code> ou <code>s1</code> no lugar de <code>subid</code>, e <code>commission</code>, <code>payout</code> ou <code>sum</code> no lugar de <code>amount</code>.</p></div></section>
-<section><h3><span class="num">3</span> Confira o que está chegando</h3>
+  } else if (tab === 'buygoods') {
+    const pb = st.anyPostback
+    body = `<section><h3>Postback da conta <span class="right">um só para todos os produtos</span></h3><div class="box">
+${
+  pb
+    ? `<p class="ok"><b>✓ Funcionando.</b> Último postback ${ago(pb.created_at)}.</p><p class="muted">O postback é configurado uma vez na conta da ${esc(platformName)} e vale para todos os produtos: a venda cai neste produto pela visita que gerou ela. Não precisa cadastrar nada por produto.</p>`
+    : `<p class="bad"><b>Ainda não chegou nenhum postback.</b></p><p class="muted">O postback é configurado uma vez, na conta, e vale para todos os produtos.</p>`
+}
+<a class="btn ${pb ? '' : 'primary'}" href="/configuracoes#postback-conta">${pb ? 'Ver o postback da conta' : 'Configurar o postback da conta'}</a>
+</div></section>
+
+<section><h3>Link de afiliado deste produto</h3><div class="box">
+${
+  isBuyGoods
+    ? `<ol><li>No painel da BuyGoods, encontre a oferta (Marketplace / Campaigns) e clique em <b>Promote</b>. <a href="${BUYGOODS}" target="_blank" rel="noopener">Abrir BuyGoods ↗</a></li>
+<li>Copie o <b>link de afiliado</b> e coloque nos botões de compra das páginas deste produto.</li>
+<li>Cole o mesmo link em <a href="/produtos/${pid}?aba=config">Configurações → Link de afiliado</a>, para o script reconhecer o botão.</li></ol>`
+    : `<p>Use o link de afiliado da plataforma nos botões de compra e cadastre o mesmo link em <a href="/produtos/${pid}?aba=config">Configurações</a>. O ID da visita vai no parâmetro <code>${esc(param)}</code>: a plataforma tem que devolver esse valor no postback (no lugar de <code>[ID DA VISITA]</code>).</p>`
+}
+<p>${product.affiliate_url ? `Cadastrado: <code>${esc(product.affiliate_url)}</code>` : '<span class="warn">Nenhum link de afiliado cadastrado.</span>'}</p>
+<p class="muted">Não precisa mexer no <code>${esc(param)}</code>: o script coloca o ID da visita sozinho. Se o link já tem um subid fixo (ex.: <code>adsgoogle</code>), ele vai para o <code>subid2</code>. Confira na aba <a href="/produtos/${pid}?aba=script">1. Script</a> se os botões foram reconhecidos.</p>
+</div></section>
+
+<section><h3>Vendas que chegaram deste produto</h3>
 ${table(
   [
     { label: 'Quando', html: (r) => esc(when(r.created_at, tz)) },
     { label: 'Tipo', html: (r) => esc(r.type) },
     { label: 'Pedido', html: (r) => esc(r.order_id) },
-    { label: 'Ligada a', html: (r) => (r.produto ? `<span class="tag ok">${esc(r.produto)}</span>` : r.visita ? '<span class="tag warn">visita sem produto</span>' : r.subid ? '<span class="tag warn">ID sem visita registrada</span>' : '<span class="tag bad">sem ID</span>') },
     { label: 'Status', html: saleStatus },
     { label: 'Comissão', n: 1, html: (r) => money(r.amount, currency) },
     { label: '', html: markTest },
   ],
   postbacks,
-  'Nenhum postback recebido ainda.',
-)}</section>`
-  } else if (tab === 'buygoods') {
-    const pbRows = table(
-      [
-        { label: 'Quando', html: (r) => esc(when(r.created_at, tz)) },
-        { label: 'Tipo', html: (r) => esc(r.type) },
-        { label: 'Pedido', html: (r) => esc(r.order_id) },
-        { label: 'Produto BuyGoods', html: (r) => esc(r.codename || '—') },
-        {
-          label: 'Ligada a',
-          html: (r) =>
-            r.produto
-              ? `<span class="tag ok">${esc(r.produto)}</span>`
-              : r.visita
-                ? '<span class="tag warn">visita sem produto (script antigo)</span>'
-                : r.subid
-                  ? '<span class="tag warn">subid sem visita registrada</span>'
-                  : '<span class="tag bad">sem subid</span>',
-        },
-        { label: 'Status', html: saleStatus },
-        { label: 'Comissão', n: 1, html: (r) => money(r.amount, currency) },
-        { label: '', html: markTest },
-      ],
-      postbacks,
-      'Nenhum postback recebido ainda. Depois de cadastrar, a primeira venda aparece aqui.',
-    )
-    body = `<div class="flash" style="background:var(--accent-soft);color:var(--text)">A BuyGoods avisa o rastreador de cada venda pelo <b>postback</b>. Ele é configurado <b>uma vez só</b> e vale para todos os produtos. A venda cai no produto certo pela visita que gerou ela.</div>
-
-<section><h3><span class="num">1</span> Entre no painel de afiliado da BuyGoods</h3><div class="box">
-<p><a class="btn" href="${BUYGOODS}" target="_blank" rel="noopener">Abrir painel da BuyGoods ↗</a> <a class="btn" href="${BUYGOODS}/faq" target="_blank" rel="noopener">FAQ da BuyGoods ↗</a></p>
-<p class="muted">Faça login com a sua conta de afiliado.</p></div></section>
-
-<section><h3><span class="num">2</span> Cadastre o postback (uma vez, para todos os produtos)</h3><div class="box">
-<ol><li>No painel, abra o menu da sua conta (canto superior direito) e entre em <b>Postback Pixels</b>. Em algumas contas o caminho é <b>Profile → Postback Pixels</b>.</li>
-<li>Clique em <b>Add New</b>, cole a URL abaixo e salve.</li></ol>
-${copy('postback', postback, 'Copiar postback')}
-<p><b>3. Teste:</b> na BuyGoods, clique em <b>Test</b> (ou “Send test”) no postback que você cadastrou. O aviso aparece aqui:</p>
-${LIVE}
-<p class="warn"><b>Não</b> cadastre o mesmo postback também dentro das configurações de uma oferta: a BuyGoods dispara duas vezes. O rastreador ignora pedido repetido, mas o certo é ter só o global.</p>
-<details class="howto"><summary>O que cada parte da URL significa</summary><table><tbody>
-<tr><td><code>{SUBID}</code></td><td>ID da visita que o script colocou no link. É assim que a venda é ligada ao anúncio.</td></tr>
-<tr><td><code>{ORDERID}</code></td><td>Número do pedido (evita contar a mesma venda duas vezes).</td></tr>
-<tr><td><code>{COMMISSION_AMOUNT}</code></td><td>Sua comissão. É o valor que vai para o Google Ads.</td></tr>
-<tr><td><code>{CONV_TYPE}</code></td><td>Tipo do evento (venda, reembolso...). Reembolsos saem da planilha do Google.</td></tr>
-<tr><td><code>{PRODUCT_CODENAME}</code></td><td>Código do produto na BuyGoods (só para conferência).</td></tr>
-<tr><td><code>key=...</code></td><td>Sua chave secreta. Não compartilhe a URL.</td></tr></tbody></table></details>
-</div></section>
-
-<section><h3><span class="num">3</span> Pegue o link de afiliado e coloque no botão da página</h3><div class="box">
-<ol><li>No painel da BuyGoods, encontre a oferta (Marketplace / Campaigns) e clique em <b>Promote</b>.</li>
-<li>Copie o <b>link de afiliado</b> e coloque nos botões de compra da página de review.</li>
-<li>Cole esse mesmo link no campo <b>Link de afiliado</b> da aba <a href="/produtos/${pid}?aba=config">Configurações</a>.</li>
-<li><b>Não precisa</b> mexer no <code>subid</code>: o script coloca o ID da visita sozinho. O link da BuyGoods costuma ir direto para o site do produtor (ex.: <code>getnervecalm.com/dtc/?aff_id=...</code>); isso é normal e funciona.</li></ol>
-<p class="muted">Evite encurtadores. Se precisar usar, coloque <code>data-rastrear</code> no link. Confira na aba <a href="/produtos/${pid}?aba=script">1. Script</a> se o teste encontra os links.</p>
-</div></section>
-
-<section><h3><span class="num">4</span> Confira o que está chegando</h3>
-${pbRows}
-<div class="box"><p class="muted">Quer testar sem esperar uma venda? Abra a página pelo <b>Testar instalação</b> (aba Script) e depois simule. A venda de teste não vai para o Google Ads nem entra nos totais.</p>
+  'Nenhuma venda deste produto ainda.',
+)}
+<div class="box"><p class="muted">Testar sem esperar uma venda: abra a página pelo <b>Testar instalação</b> (aba Script) e depois simule. A venda de teste não vai para o Google Ads nem entra nos totais.</p>
 <form method="post" action="/produtos/${pid}/simular-venda" class="actions"><button type="submit">Simular venda de teste</button></form>
 ${st.lastSale && st.lastSale.status === 'test' ? `<p class="ok">✓ Venda de teste ligada a este produto ${ago(st.lastSale.created_at)}.</p>` : ''}</div></section>`
   } else if (tab === 'google') {
@@ -921,7 +869,7 @@ try{const tp=document.getElementById('test-page');const r=await(await fetch('/pr
 
 // ---------------------------------------------------------------- Configurações
 
-export function settingsPage({ base, key, conversionName, currency, days, lastPostback, csvFetch, scriptReport, tz, flash, adsScript = '' }) {
+export function settingsPage({ base, key, conversionName, currency, days, lastPostback, csvFetch, scriptReport, tz, flash, adsScript = '', postbacks = [] }) {
   const postback = `${base}/postback?key=${key}&subid={SUBID}&order={ORDERID}&amount={COMMISSION_AMOUNT}&type={CONV_TYPE}&product={PRODUCT_CODENAME}`
   const csv = `${base}/google-ads.csv?key=${key}`
   return layout(
@@ -930,11 +878,44 @@ export function settingsPage({ base, key, conversionName, currency, days, lastPo
     `${flash ? `<div class="flash ${flash.bad ? 'bad' : ''}">${esc(flash.text)}</div>` : ''}<h2 class="title">Configurações gerais</h2>
 <p class="sub">O que vale para todos os produtos. A configuração de cada produto fica na página dele.</p>
 
-<section><h3>BuyGoods — postback (um só para todos os produtos)</h3><div class="box">
-${copy('postback', postback)}
+<section id="postback-conta"><h3>Postback da conta <span class="right">um só para todos os produtos</span></h3><div class="box">
+<p>A plataforma avisa o rastreador de cada venda pelo postback. Ele é configurado <b>uma vez, na conta</b>, e vale para todos os produtos que você promove nela: a venda cai no produto certo pela visita que gerou ela.</p>
+<p>${lastPostback ? `<span class="ok">✓ Funcionando: último postback ${ago(lastPostback.created_at)} (${esc(when(lastPostback.created_at, tz))}).</span>` : '<span class="warn">Nenhum postback recebido ainda.</span>'}</p>
+<h4 style="margin:14px 0 6px">BuyGoods</h4>
+<ol><li>Entre no painel de afiliado: <a href="https://backoffice.buygoods.com" target="_blank" rel="noopener">BuyGoods ↗</a> (<a href="https://backoffice.buygoods.com/faq" target="_blank" rel="noopener">FAQ</a>).</li>
+<li>Menu da conta (canto superior direito) → <b>Postback Pixels</b> (em algumas contas: <b>Profile → Postback Pixels</b>) → <b>Add New</b>.</li>
+<li>Cole a URL abaixo e salve.</li>
+<li>Clique em <b>Test</b> nesse postback. O aviso aparece aqui embaixo.</li></ol>
+${copy('postback', postback, 'Copiar postback')}
 ${LIVE}
-<p>${lastPostback ? `<span class="ok">✓ Último postback recebido ${ago(lastPostback.created_at)} (${esc(when(lastPostback.created_at, tz))}).</span>` : '<span class="muted">Nenhum postback recebido ainda.</span>'}</p>
-</div></section>
+<p class="warn">Cadastre só o postback da conta. Não repita dentro das configurações de cada oferta: a BuyGoods dispararia duas vezes.</p>
+<details class="howto"><summary>O que cada parte da URL significa</summary><table><tbody>
+<tr><td><code>{SUBID}</code></td><td>ID da visita que o script colocou no link. É assim que a venda é ligada ao anúncio e ao produto.</td></tr>
+<tr><td><code>{ORDERID}</code></td><td>Número do pedido (evita contar a mesma venda duas vezes).</td></tr>
+<tr><td><code>{COMMISSION_AMOUNT}</code></td><td>Sua comissão. É o valor que vai para o Google Ads.</td></tr>
+<tr><td><code>{CONV_TYPE}</code></td><td>Tipo do evento (venda, reembolso...). Reembolsos saem da planilha do Google.</td></tr>
+<tr><td><code>{PRODUCT_CODENAME}</code></td><td>Código do produto na BuyGoods (só para conferência).</td></tr>
+<tr><td><code>key=...</code></td><td>Sua chave secreta. Não compartilhe a URL.</td></tr></tbody></table></details>
+<details class="howto"><summary>Outra plataforma (ClickBank, Digistore24...)</summary>
+<p>Cadastre, uma vez na conta da plataforma, a URL abaixo, trocando cada parte entre colchetes pela variável (macro) da plataforma:</p>
+${copy('postback-generic', `${base}/postback?key=${key}&subid=[ID DA VISITA]&order=[NÚMERO DO PEDIDO]&amount=[COMISSÃO]&type=[TIPO DO EVENTO]`, 'Copiar modelo')}
+<p class="muted">[ID DA VISITA] é a variável que devolve o parâmetro em que o script põe o ID (configurado em cada produto em Configurações → Avançado; ex.: ClickBank usa <code>tid</code>). Também são aceitos <code>clickid</code>, <code>cid</code> ou <code>s1</code> no lugar de <code>subid</code>, e <code>commission</code>, <code>payout</code> ou <code>sum</code> no lugar de <code>amount</code>.</p></details>
+</div>
+${table(
+  [
+    { label: 'Quando', html: (r) => esc(when(r.created_at, tz)) },
+    { label: 'Tipo', html: (r) => esc(r.type) },
+    { label: 'Pedido', html: (r) => esc(r.order_id) },
+    { label: 'Produto (plataforma)', html: (r) => esc(r.codename || '—') },
+    { label: 'Ligada a', html: (r) => (r.produto ? `<span class="tag ok">${esc(r.produto)}</span>` : r.visita ? '<span class="tag warn">visita sem produto</span>' : r.subid ? '<span class="tag warn">ID sem visita registrada</span>' : '<span class="tag bad">sem ID</span>') },
+    { label: 'Status', html: saleStatus },
+    { label: 'Comissão', n: 1, html: (r) => money(r.amount, currency) },
+    { label: '', html: markTest },
+  ],
+  postbacks,
+  'Nenhum postback recebido ainda.',
+)}
+</section>
 
 <section><h3>Google Ads — script (um por conta)</h3><div class="box">
 <p>Um script por conta de anúncios envia as vendas de todos os produtos, cada uma com o nome de conversão do seu produto.</p>

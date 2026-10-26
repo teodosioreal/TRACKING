@@ -468,7 +468,7 @@ async function handleAdmin(req, res, url) {
         tab,
         progress: setupProgress(st),
         totals,
-        postbacks: tab === 'buygoods' ? recentPostbacks(db, 10) : [],
+        postbacks: tab === 'buygoods' ? recentPostbacks(db, 15, product.id) : [],
         image: img ? { updated_at: img.updated_at } : null,
         pings: tab === 'script' ? pagePings(db, product.id) : [],
         ...extra,
@@ -660,6 +660,7 @@ async function handleAdmin(req, res, url) {
         scriptReport: getSetting(db, 'script_report'),
         tz: cfg.tz,
         adsScript: adsScriptFor(baseUrl(req)),
+        postbacks: recentPostbacks(db, 15),
       }),
     )
   }
