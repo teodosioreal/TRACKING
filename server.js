@@ -90,6 +90,8 @@ async function refreshHealth() {
   setTimeout(refreshHealth, h && !h.ok ? 60e3 : 10 * 60e3).unref()
 }
 const trackerJs = readFileSync(join(here, 'public', 't.js'), 'utf8')
+const adsScript = readFileSync(join(here, 'deploy', 'google-ads-script.js'), 'utf8')
+const adsScriptFor = (base) => adsScript.replace('__PLANILHA__', `${base}/google-ads.csv?key=${cfg.secretKey}&dias=3`)
 
 // Nome usado nas vendas cujas visitas não têm produto. Editável em Configurações;
 // o CONVERSION_NAME do .env é só o valor inicial.
@@ -264,10 +266,12 @@ async function handlePublic(req, res, url) {
       send(res, 404, 'produto não encontrado')
       return true
     }
+    // "dias" encurta a janela (o script do Google Ads usa 3 para não reenviar 30 dias toda hora).
+    const dias = Number.parseInt(url.searchParams.get('dias'), 10)
     const csv = exportGoogleAdsCsv(db, {
       conversionName: defaultConversion(),
       currency: cfg.currency,
-      days: cfg.exportDays,
+      days: dias >= 1 && dias <= 90 ? dias : cfg.exportDays,
       productId: pid || null,
     })
     // Leitura feita pelo Google Ads (não por você no navegador logado).
@@ -377,7 +381,7 @@ async function handleAdmin(req, res, url) {
 
     if (!action && method === 'GET') {
       const tab = PRODUCT_TABS[url.searchParams.get('aba')] ? url.searchParams.get('aba') : 'status'
-      return html(res, renderProduct(tab))
+      return html(res, renderProduct(tab, { adsScript: adsScriptFor(baseUrl(req)) }))
     }
 
     if (!action && method === 'POST') {
@@ -537,6 +541,7 @@ async function handleAdmin(req, res, url) {
             : null,
         csvFetch: getSetting(db, 'csv_fetch:all'),
         tz: cfg.tz,
+        adsScript: adsScriptFor(baseUrl(req)),
       }),
     )
   }

@@ -225,6 +225,11 @@ function layout(title, active, body, extraJs = '') {
 </body></html>`
 }
 
+// Botão de copiar em destaque, com o código escondido (para textos longos).
+const copyHidden = (id, text, label) =>
+  `<div class="actions"><button type="button" class="primary" data-copy="${id}">${label}</button></div>
+<details class="howto"><summary>Ver o código</summary><pre id="${id}" style="margin:0 13px 11px;white-space:pre-wrap;word-break:break-all;font-size:12px">${esc(text)}</pre></details>`
+
 const copy = (id, text, label = 'Copiar') =>
   `<div class="code"><pre id="${id}">${esc(text)}</pre><button type="button" data-copy="${id}">${label}</button></div>`
 
@@ -514,7 +519,7 @@ export function checklistHtml(product, st, { tz }) {
   items.push(
     st.csvFetch
       ? item('ok', '✓', 'Google Ads lendo a planilha', `Última leitura ${ago(st.csvFetch.at)} (${esc(when(st.csvFetch.at, tz))}).`)
-      : item('wait', '5', 'Google Ads lendo a planilha', 'Ainda não houve leitura. Configure a programação no passo 3.'),
+      : item('wait', '5', 'Google Ads lendo a planilha', 'Ainda não houve leitura. Cole o script do Google Ads (aba 3. Google Ads).'),
   )
 
   return `<ul class="check">${items.join('')}</ul>`
@@ -536,7 +541,7 @@ export const PRODUCT_TABS = {
 
 const BUYGOODS = 'https://backoffice.buygoods.com'
 
-export function productPage(product, st, { base, key, tz, currency, flash, tab, progress, totals, postbacks, image, errors, values }) {
+export function productPage(product, st, { base, key, tz, currency, flash, tab, progress, totals, postbacks, image, errors, values, adsScript = '' }) {
   const pid = esc(product.id)
   const script = `<script src="${base}/t.js?p=${product.id}" async></script>`
   const postback = `${base}/postback?key=${key}&subid={SUBID}&order={ORDERID}&amount={COMMISSION_AMOUNT}&type={CONV_TYPE}&product={PRODUCT_CODENAME}`
@@ -694,48 +699,40 @@ ${pbRows}
 ${st.lastSale && st.lastSale.status === 'test' ? `<p class="ok">✓ Venda de teste ligada a este produto ${ago(st.lastSale.created_at)}.</p>` : ''}</div></section>`
   } else if (tab === 'google') {
     const where = (t) => `<span class="where">${t}</span>`
-    body = `<div class="flash info">O Google Ads otimiza a campanha com as vendas que o rastreador envia pela planilha. São 3 partes: <b>a conta</b> (uma vez só), <b>a conversão deste produto</b> e <b>a campanha deste produto</b>.</div>
+    body = `<div class="flash info">No Google Ads você faz só 2 coisas: <b>criar a conversão</b> deste produto e <b>colar o script</b> (uma vez por conta). A plataforma coloca cada venda na planilha e o script envia para o Google a cada hora.</div>
 
-<section><h3>A. Conta do Google Ads <span class="right">uma vez por conta</span></h3><ol class="steps">
-<li><b>Ative a codificação automática (gclid)</b>
-${where('Admin (engrenagem) → Configurações da conta → Codificação automática')} → marque <i>“Adicionar tag ao URL em que as pessoas clicam no meu anúncio”</i> → Salvar.
-<div class="muted">Sem isso o anúncio não manda o gclid e nenhuma venda vai para o Google. <a href="https://support.google.com/google-ads/answer/3095550" target="_blank" rel="noopener">Ajuda ↗</a></div></li>
-<li><b>Cole o sufixo do URL final</b>
-${where('Admin → Configurações da conta → Rastreamento → Sufixo do URL final')}
-${copy('suffix', suffix)}
-<div class="muted">Isso mostra campanha e palavra-chave no rastreador. Deixe o campo <b>Modelo de rastreamento</b> vazio. Se preferir por campanha: ${where('Campanha → Configurações → Opções de URL da campanha → Sufixo do URL final')}.</div></li>
-</ol><div class="box" style="padding-top:0"><a class="btn" href="https://ads.google.com/aw/accountsettings" target="_blank" rel="noopener">Abrir configurações da conta ↗</a></div></section>
+<section><h3>1. Crie a conversão deste produto</h3><div class="box">
+<form class="conv" method="post" action="/produtos/${pid}/conversao">
+<label for="conv-input"><b>Nome da conversão</b></label>
+<div class="row"><input type="text" id="conv-input" name="conversion_name" value="${esc(product.conversion_name)}" required maxlength="100">
+<button type="submit">Salvar nome</button><button type="button" class="primary" data-copy-input="conv-input">Copiar nome</button></div>
+${st.lastRealSale ? `<div class="hint warn">Este produto já tem vendas: trocar o nome depois que o Google já importou faz contar em dobro. Troque só para corrigir.</div>` : ''}
+</form>
+<p>No Google Ads: ${where('Metas → Conversões → + Nova ação de conversão → Importar → Conversões de cliques')}</p>
+<p>Use <b>exatamente o nome acima</b>, categoria <b>Compra</b> e valor <b>“usar valores diferentes para cada conversão”</b>. O resto pode ficar no padrão.</p>
+<a class="btn" href="https://ads.google.com/aw/conversions" target="_blank" rel="noopener">Abrir Conversões no Google Ads ↗</a>
+</div></section>
 
-<section><h3>B. Conversão deste produto</h3><ol class="steps">
-<li><b>Nome da conversão</b>
-<form class="conv" method="post" action="/produtos/${pid}/conversao" style="margin:6px 0 0">
-<div class="row"><input type="text" id="conv-input" name="conversion_name" value="${esc(product.conversion_name)}" required maxlength="100" aria-label="Nome da conversão">
-<button type="submit">Salvar nome</button><button type="button" data-copy-input="conv-input">Copiar nome</button></div>
-<div class="hint">Tem que ser <b>idêntico</b> ao nome da ação no Google Ads (maiúsculas, espaços e acentos contam).</div>
-${st.lastRealSale ? `<div class="hint warn">Este produto já tem vendas. Se o Google já importou vendas com o nome atual, trocar o nome faz ele importar de novo na conversão nova (contagem em dobro). Troque só para corrigir um nome que ainda não existe no Google Ads.</div>` : ''}
-</form></li>
-<li><b>Crie a ação de conversão</b>
-${where('Metas → Conversões → Resumo → + Nova ação de conversão → Importar')} → escolha <i>CRMs, arquivos ou outras fontes de dados</i> → <i>Acompanhar conversões de cliques</i> → Continuar.
-<div>Preencha: <b>Categoria</b> Compra · <b>Nome</b> o do passo anterior · <b>Valor</b> “Usar valores diferentes para cada conversão” (moeda USD) · <b>Contagem</b> Todas · <b>Janela de conversão</b> 30 dias · deixe como ação <b>principal</b>.</div></li>
-<li><b>Programe a planilha</b>
-${where('Metas → Conversões → Uploads → Programações → + Nova programação')} → Fonte <b>HTTPS</b> → cole o link → Frequência <b>a cada 6 horas</b> → Salvar.
-${copy('csv', csv, 'Copiar link')}
-<div class="muted">${st.salesForGoogle} venda(s) com gclid na planilha deste produto. ${st.csvFetch ? `<span class="ok">✓ Lida pelo Google ${ago(st.csvFetch.at)}.</span>` : '<span class="warn">Ainda não foi lida pelo Google.</span>'} <a href="/google-ads.csv?key=${esc(key)}&produto=${pid}" target="_blank">Ver planilha</a> · <a href="https://support.google.com/google-ads/answer/7014069" target="_blank" rel="noopener">Ajuda do Google ↗</a></div></li>
-</ol><div class="box" style="padding-top:0"><a class="btn" href="https://ads.google.com/aw/conversions" target="_blank" rel="noopener">Abrir Conversões ↗</a></div></section>
+<section><h3>2. Cole o script no Google Ads <span class="right">uma vez por conta, vale para todos os produtos</span></h3><div class="box">
+<ol>
+<li>No Google Ads: ${where('Ferramentas → Ações em massa → Scripts → + (Novo script)')}</li>
+<li>Apague o que vier escrito, cole o script abaixo e clique em <b>Autorizar</b>.</li>
+<li>Clique em <b>Executar</b> uma vez para testar e depois em <b>Salvar</b>.</li>
+<li>Na lista de scripts, em <b>Frequência</b>, escolha <b>A cada hora</b>.</li>
+</ol>
+${copyHidden('ads-script', adsScript, 'Copiar script')}
+<p>${st.csvFetch ? `<span class="ok">✓ O Google Ads leu a planilha ${ago(st.csvFetch.at)}.</span>` : '<span class="warn">O script ainda não leu a planilha.</span> <span class="muted">Depois de colar, clique em Executar e recarregue esta página.</span>'}
+<span class="muted">· ${st.salesForGoogle} venda(s) deste produto com gclid.</span></p>
+</div></section>
 
-<section><h3>C. Campanha deste produto</h3><ol class="steps">
-<li><b>URL final dos anúncios</b> = a página de review deste produto:
-${product.review_url ? copy('review', product.review_url, 'Copiar') : `<div class="warn">Cadastre o endereço da página em <a href="/produtos/${pid}?aba=config">Configurações</a>.</div>`}
-<div class="muted">Não use encurtador nem redirecionamento no URL final: o gclid precisa chegar na página com o script.</div></li>
-<li><b>Meta da campanha: só a conversão deste produto</b>
-${where('Campanha → Configurações → Metas')} → <i>Usar configurações de meta específicas da campanha</i> → deixe marcada só <b>${esc(product.conversion_name)}</b> → Salvar.
-<div class="muted">Assim a campanha deste produto otimiza só pelas vendas dele, e não pelas de outros produtos da mesma conta.</div></li>
-<li><b>Estratégia de lance</b>
-${where('Campanha → Configurações → Lances')}
-<div>Comece com <b>Maximizar cliques</b> (com limite de CPC) ou <b>CPC manual</b> enquanto ainda não há vendas. Com um volume constante de conversões (algo como 15–30 em 30 dias), mude para <b>Maximizar conversões</b> e, depois, <b>CPA desejado</b> ou <b>ROAS desejado</b>.</div></li>
-<li><b>Confira depois da primeira venda</b>
-<div>Aqui: a venda aparece em <a href="/vendas">Vendas</a> com “Google Ads: na planilha”. No Google: ${where('Metas → Conversões → Uploads')} mostra a importação (pode levar até a próxima programação + algumas horas para aparecer nas colunas).</div></li>
-</ol></section>`
+<details class="howto"><summary>Dicas opcionais (não precisa para funcionar)</summary>
+<ol>
+<li><b>Ver campanha e palavra-chave no rastreador:</b> ${where('Admin → Configurações da conta → Rastreamento → Sufixo do URL final')} e cole:
+${copy('suffix', suffix)}</li>
+<li><b>Campanha otimizar só por este produto:</b> ${where('Campanha → Configurações → Metas → Usar metas específicas da campanha')} e marque só <b>${esc(product.conversion_name)}</b>.</li>
+<li><b>URL final do anúncio:</b> a própria página de review${product.review_url ? ` (<code>${esc(product.review_url)}</code>)` : ''}, sem encurtador ou redirecionamento.</li>
+<li><b>gclid:</b> a codificação automática vem ligada por padrão. Se nenhuma visita aparecer como “Pago (Google Ads)”, confira em ${where('Admin → Configurações da conta → Codificação automática')}.</li>
+</ol></details>`
   } else {
     const v = values || product
     const err = (k) => (errors?.[k] ? `<div class="err">${esc(errors[k])}</div>` : '')
@@ -823,7 +820,7 @@ try{const r=await(await fetch('/produtos/'+pid+'/verificar')).json();out.innerHT
 
 // ---------------------------------------------------------------- Configurações
 
-export function settingsPage({ base, key, conversionName, currency, days, lastPostback, csvFetch, tz, flash }) {
+export function settingsPage({ base, key, conversionName, currency, days, lastPostback, csvFetch, tz, flash, adsScript = '' }) {
   const postback = `${base}/postback?key=${key}&subid={SUBID}&order={ORDERID}&amount={COMMISSION_AMOUNT}&type={CONV_TYPE}&product={PRODUCT_CODENAME}`
   const csv = `${base}/google-ads.csv?key=${key}`
   return layout(
@@ -838,11 +835,10 @@ ${LIVE}
 <p>${lastPostback ? `<span class="ok">✓ Último postback recebido ${ago(lastPostback.created_at)} (${esc(when(lastPostback.created_at, tz))}).</span>` : '<span class="muted">Nenhum postback recebido ainda.</span>'}</p>
 </div></section>
 
-<section><h3>Google Ads — planilha com todos os produtos</h3><div class="box">
-<p>Se todos os produtos rodam na <b>mesma conta</b> do Google Ads, você pode usar uma programação só com este link (cada venda vai com o nome de conversão do seu produto). Se cada produto roda numa conta diferente, use o link da página de cada produto.</p>
-${copy('csv', csv)}
-<p>${csvFetch ? `<span class="ok">✓ Lida pela última vez ${ago(csvFetch.at)}.</span>` : '<span class="muted">Ainda não foi lida pelo Google Ads.</span>'}</p>
-<p class="muted">Vendas aprovadas dos últimos ${days} dias, com gclid, em ${esc(currency)}. O Google ignora vendas que já importou.</p>
+<section><h3>Google Ads — script (um por conta)</h3><div class="box">
+<p>Cole em ${'<span class="where">Google Ads → Ferramentas → Ações em massa → Scripts → +</span>'}, clique em <b>Autorizar</b>, <b>Executar</b> e <b>Salvar</b>, e deixe a frequência <b>A cada hora</b>. Ele envia as vendas de todos os produtos, cada uma com o nome de conversão do seu produto.</p>
+${copyHidden('ads-script', adsScript, 'Copiar script')}
+<p>${csvFetch ? `<span class="ok">✓ Lida pela última vez ${ago(csvFetch.at)}.</span>` : '<span class="muted">Ainda não foi lida pelo Google Ads.</span>'} <span class="muted">Vendas aprovadas com gclid, em ${esc(currency)}. O Google ignora vendas que já importou.</span></p>
 </div></section>
 
 <section id="versao"><h3>Versão no ar</h3><div class="box">
