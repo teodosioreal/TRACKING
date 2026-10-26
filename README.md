@@ -113,9 +113,12 @@ derruba todas as sessões. Depois de 10 senhas erradas, o IP espera 15 minutos.
 
 Detalhes:
 
-- **Link de afiliado**: o script reconhece o botão de compra pelo domínio do
-  link cadastrado no produto, por links com `aff_id=` (formato da BuyGoods,
-  que costuma ir direto para o site do produtor) e por links para buygoods.
+- **Link de afiliado**: com o link cadastrado no produto, o script marca só
+  os links desse domínio (em buygoods.com, clickbank.net, digistore24.com e
+  hotmart.com, também da mesma oferta). Assim, numa página com vários
+  produtos, cada script marca só o botão do seu produto. Sem link cadastrado,
+  marca links com `aff_id=` (BuyGoods) e links para buygoods. Também reconhece
+  `<button onclick>`, `data-href` e formulários.
   Ele grava o ID da visita no `subid`; um subid fixo que já estava no link
   vai para o `subid2`.
 - **Outras plataformas**: escolha "Outra plataforma" e, em Configurações →

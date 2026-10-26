@@ -1,20 +1,25 @@
 // Script da página de review. Cada produto tem o seu (o painel gera):
 //   <script src="https://tracking.odingdong.tech/t.js?p=ID_DO_PRODUTO" async></script>
-// Reconhece como link de compra: links com aff_id (formato da BuyGoods, mesmo no
-// site do produtor), links para buygoods, o domínio do link de afiliado cadastrado
-// no produto e links com o atributo data-rastrear.
+// Reconhece como link de compra:
+// - com link de afiliado cadastrado no produto: SÓ links desse domínio (assim,
+//   numa página com vários produtos, cada script marca só o link do seu produto);
+// - sem link cadastrado: links com aff_id (BuyGoods) e links para buygoods;
+// - links com data-rastrear (ou data-rastrear="ID_DO_PRODUTO" para um só produto).
 // Opcional no <script>: data-dominios="outro.com" e data-param="subid".
 ;(function () {
   var BASE = '__BASE__'
   var PID = '__PRODUCT__'
   var PRODUCT_DOMAINS = '__DOMAINS__'
   var PRODUCT_PARAM = '__PARAM__'
+  // Em domínio de rede (buygoods.com, clickbank.net...), parâmetros que o
+  // link precisa ter para ser deste produto. Ex.: {"o":"456"}.
+  var MATCH = __MATCH__
   var KEY = 'rt_visita' + (PID ? '_' + PID : '')
   var TTL = 90 * 864e5
   var script = document.currentScript || {}
   var data = script.dataset || {}
-  var domains = ['buygoods']
-    .concat(PRODUCT_DOMAINS ? PRODUCT_DOMAINS.split(',') : [])
+  var strict = Boolean(PRODUCT_DOMAINS)
+  var domains = (strict ? PRODUCT_DOMAINS.split(',') : ['buygoods'])
     .concat(data.dominios ? data.dominios.split(',') : [])
     .map(function (d) {
       return d.trim().toLowerCase()
@@ -71,14 +76,30 @@
       var u = new URL(href, location.href)
       if (!/^https?:$/.test(u.protocol)) return false
       var host = u.hostname.toLowerCase()
-      for (var i = 0; i < domains.length; i++) if (domains[i] && host.indexOf(domains[i]) !== -1) return true
-      return /[?&]aff_id=/i.test(u.search)
+      for (var i = 0; i < domains.length; i++) {
+        var d = domains[i]
+        if (!d) continue
+        // "buygoods" (sem ponto) vale como trecho; domínio completo só ele e subdomínios.
+        if (d.indexOf('.') === -1 ? host.indexOf(d) !== -1 : host === d || host.slice(-d.length - 1) === '.' + d) return sameOffer(u)
+      }
+      return !strict && /[?&]aff_id=/i.test(u.search)
     } catch (e) {
       return false
     }
   }
 
+  function sameOffer(u) {
+    for (var k in MATCH) if (Object.prototype.hasOwnProperty.call(MATCH, k) && u.searchParams.get(k) !== MATCH[k]) return false
+    return true
+  }
+
   var OUR_ID = /^v[a-z0-9]{8,}$/
+
+  // data-rastrear sem valor: todos os scripts; com valor: só o produto indicado.
+  function marked(el) {
+    var v = el.getAttribute('data-rastrear')
+    return v !== null && (!v || v === PID)
+  }
 
   // Mesmo endereço, com o ID da visita no parâmetro do produto.
   function tagUrl(href) {
@@ -96,7 +117,7 @@
   }
 
   function tag(a) {
-    if (!a.href || !(a.hasAttribute('data-rastrear') || isTrackedUrl(a.href))) return false
+    if (!a.href || !(marked(a) || isTrackedUrl(a.href))) return false
     var t = tagUrl(a.href)
     if (!t) return false
     if (t !== a.href) a.href = t
@@ -114,7 +135,7 @@
   }
   function trackedButton(el) {
     var u = urlOf(el)
-    return u && (el.hasAttribute('data-rastrear') || isTrackedUrl(u)) ? u : null
+    return u && (marked(el) || isTrackedUrl(u)) ? u : null
   }
 
   function tagAll() {
@@ -124,7 +145,7 @@
     var forms = document.querySelectorAll('form[action]')
     for (var j = 0; j < forms.length; j++) {
       var f = forms[j]
-      if (f.hasAttribute('data-rastrear') || isTrackedUrl(f.action)) {
+      if (marked(f) || isTrackedUrl(f.action)) {
         var t = tagUrl(f.action)
         if (t) {
           f.action = t

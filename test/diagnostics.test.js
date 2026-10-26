@@ -76,3 +76,17 @@ test('postback sem o campo subid é apontado', () => {
   const d = runDiagnostics(db, { now })
   assert.match(titles(d.general).join('\n'), /bad: O postback chega SEM o campo subid/)
 })
+
+test('avisa página com vários produtos quando algum não tem link de afiliado', () => {
+  const db = openDb(':memory:')
+  const form = (o) => new URLSearchParams(o)
+  const a = createProduct(db, parseProductForm(form({ name: 'Com link', conversion_name: 'A', affiliate_url: 'https://a.com/x' })).values)
+  const b = createProduct(db, parseProductForm(form({ name: 'Sem link', conversion_name: 'B' })).values)
+  recordPing(db, { pid: a, url: 'https://lista.com/top5', links: 1 }, ago(1))
+  recordPing(db, { pid: b, url: 'https://lista.com/top5', links: 2 }, ago(1))
+  const d = runDiagnostics(db, { now })
+  const sem = d.products.find((p) => p.product.name === 'Sem link')
+  assert.match(titles(sem.items).join('\n'), /bad: Página com vários produtos e este sem link de afiliado/)
+  const com = d.products.find((p) => p.product.name === 'Com link')
+  assert.doesNotMatch(titles(com.items).join('\n'), /vários produtos/)
+})

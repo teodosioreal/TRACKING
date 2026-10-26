@@ -21,6 +21,7 @@ import {
   listProducts,
   productStatus,
   affiliateHost,
+  affiliateMatch,
   trackingParam,
   saveImage,
   getImage,
@@ -240,6 +241,7 @@ async function handlePublic(req, res, url) {
       .replace('__PRODUCT__', product ? product.id : '')
       .replace('__DOMAINS__', affiliateHost(product))
       .replace('__PARAM__', product ? trackingParam(product) : '')
+      .replace('__MATCH__', JSON.stringify(affiliateMatch(product)).replace(/</g, '\\u003c'))
     send(res, 200, js, 'application/javascript; charset=utf-8', { ...CORS, 'Cache-Control': 'public, max-age=300' })
     return true
   }

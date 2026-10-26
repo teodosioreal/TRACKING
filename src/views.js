@@ -708,7 +708,11 @@ ${
       )}`
     : ''
 }
-<p class="muted" style="margin-top:12px">O script reconhece sozinho o link de afiliado: o domínio do link cadastrado em Configurações${product.affiliate_url ? ` (<b>${esc(product.affiliate_url.replace(/^https?:\/\//, '').split('/')[0])}</b>)` : ''}, links com <code>aff_id=</code> (formato da BuyGoods) e links para buygoods. Ele coloca o ID da visita no parâmetro <code>${esc(param)}</code>${param === 'subid' ? '; se o link já tinha um subid fixo (ex.: <code>adsgoogle</code>), esse valor passa para o <code>subid2</code>' : ''}. Link encurtado: coloque <code>data-rastrear</code> nele.</p>
+<p class="muted" style="margin-top:12px">${
+  product.affiliate_url
+    ? `Este script marca <b>só</b> os links do domínio do link de afiliado cadastrado (<b>${esc(product.affiliate_url.replace(/^https?:\/\//, '').split('/')[0])}</b>)${/buygoods\.com|clickbank\.net|digistore24\.com|hotmart\.com/i.test(product.affiliate_url) ? ' e da mesma oferta' : ''}. Assim, numa página com vários produtos (lista/top 5), cada script marca só o botão do seu produto e as vendas não se misturam.`
+    : `Sem link de afiliado cadastrado, o script marca links com <code>aff_id=</code> (BuyGoods) e links para buygoods. <b>Se a página tiver vários produtos, cadastre o link de afiliado em Configurações</b>, senão um script pode marcar o botão de outro produto.`
+} O ID da visita vai no parâmetro <code>${esc(param)}</code>${param === 'subid' ? '; um subid fixo que já estava no link (ex.: <code>adsgoogle</code>) passa para o <code>subid2</code>' : ''}. Link encurtado: coloque <code>data-rastrear="${pid}"</code> nele.</p>
 </div></section>`
   } else if (tab === 'buygoods') {
     const pb = st.anyPostback

@@ -255,3 +255,11 @@ test('sinal sem link reconhecido guarda os links externos sugeridos', async () =
   recordPing(db, { pid: id, url: 'https://r.com/a', links: 2, candidates: [] })
   assert.equal(pagePings(db, id)[0].candidates, null)
 })
+
+test('link de rede (buygoods.com) identifica o produto pelos parâmetros da oferta', async () => {
+  const { affiliateMatch } = await import('../src/products.js')
+  assert.deepEqual(affiliateMatch({ affiliate_url: 'https://www.buygoods.com/track/?a=123&o=456&subid=adsgoogle&subid2=x' }), { a: '123', o: '456' })
+  assert.deepEqual(affiliateMatch({ affiliate_url: 'https://hop.clickbank.net/?affiliate=eu&vendor=nerv&tid=1' }), { affiliate: 'eu', vendor: 'nerv' })
+  assert.deepEqual(affiliateMatch({ affiliate_url: 'https://getnervecalm.com/dtc/?aff_id=1' }), {}) // domínio próprio: basta o domínio
+  assert.deepEqual(affiliateMatch({}), {})
+})

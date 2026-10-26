@@ -192,6 +192,22 @@ export function runDiagnostics(db, { now = new Date(), health = null, exportDays
       items.push(f('warn', 'Nenhuma visita com gclid nos últimos 14 dias', `${v.total} visita(s), nenhuma de clique no Google Ads.`, 'Confira se a campanha está ativa, se o URL final é a página com o script e se a codificação automática está ligada.'))
     if (v.semCamp > 0)
       items.push(f('warn', `${v.semCamp} visita(s) paga(s) sem campanha identificada`, 'O sufixo do URL final não chegou nessas visitas.', 'Cole o sufixo nas Configurações da conta ou de cada campanha (aba Google Ads → Dicas).'))
+    // Página com scripts de vários produtos: sem link de afiliado cadastrado, o
+    // script deste produto pode marcar o link de outro (e misturar as vendas).
+    if (!p.affiliate_url) {
+      const shared = db
+        .prepare(
+          `SELECT page FROM page_pings WHERE page IN (SELECT page FROM page_pings WHERE product_id = ?)
+            GROUP BY page HAVING COUNT(DISTINCT product_id) > 1`,
+        )
+        .all(p.id)
+      if (shared.length)
+        items.push(
+          f('bad', 'Página com vários produtos e este sem link de afiliado cadastrado',
+            `Páginas: ${shared.map((x) => x.page.replace(/^https?:\/\//, '')).join(', ')}. Sem o link, o script deste produto pode marcar o botão de outro produto e as vendas se misturam.`,
+            'Cadastre o link de afiliado deste produto em Configurações. Com o link cadastrado, cada script marca só o botão do seu produto.'),
+        )
+    }
     const missing = pr.steps.filter((s) => !s.done).map((s) => s.label)
     return { product: p, progress: pr, missing, items }
   })

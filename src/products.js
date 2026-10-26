@@ -175,6 +175,25 @@ export function affiliateHost(product) {
   }
 }
 
+// Domínios de rede (o mesmo domínio serve vários produtos): o produto é
+// identificado pelos parâmetros do link (ex.: oferta), não só pelo domínio.
+const SHARED_HOSTS = /(^|\.)(buygoods\.com|clickbank\.net|digistore24\.com|hotmart\.com)$/
+const TRACKING_PARAMS = /^(subid\d*|sub\d*|tid|aff_sub\d*|sck|src|cid|clickid|click_id|utm_.*|gclid|fbclid)$/i
+
+// Parâmetros que o link de compra precisa ter para ser deste produto
+// (só para domínios de rede). Ex.: { a: "123", o: "456" }.
+export function affiliateMatch(product) {
+  try {
+    const u = new URL(product?.affiliate_url)
+    if (!SHARED_HOSTS.test(u.hostname.toLowerCase())) return {}
+    const out = {}
+    for (const [k, v] of u.searchParams) if (!TRACKING_PARAMS.test(k) && v) out[k] = v
+    return out
+  } catch {
+    return {}
+  }
+}
+
 export function getImage(db, id) {
   return db.prepare('SELECT mime, data, updated_at FROM product_images WHERE product_id = ?').get(id) || null
 }
