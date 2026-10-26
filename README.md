@@ -81,7 +81,10 @@ systemctl enable --now tracking-update.timer tracking-backup.timer
 
 ## Como usar
 
-Abra `https://tracking.odingdong.tech` (login do `.env`).
+Abra `https://tracking.odingdong.tech` e entre com `ADMIN_USER` e
+`ADMIN_PASSWORD` do `.env`. A sessão fica num cookie (HttpOnly, Secure,
+SameSite=Lax) por 30 dias; **Sair** no topo encerra. Trocar a senha no `.env`
+derruba todas as sessões. Depois de 10 senhas erradas, o IP espera 15 minutos.
 
 1. **Produtos → Novo produto**: nome, plataforma (BuyGoods), nome da
    conversão no Google Ads e o endereço da página de review.
@@ -121,7 +124,8 @@ Detalhes:
 | `POST /c`, `/o`, `/p` | público | visita / clique no botão / sinal do script |
 | `GET\|POST /postback` | `key` | recebe venda da BuyGoods |
 | `GET /google-ads.csv` | `key` | planilha de conversões do Google Ads |
-| `GET /`, `/produtos`, `/configuracoes` | login | painel, produtos e configurações |
+| `GET /login`, `POST /login`, `POST /sair` | público | entrar e sair |
+| demais páginas (`/`, `/visitantes`, `/vendas`, `/produtos`, `/configuracoes`...) | sessão | painel |
 | `GET /saude` | público | checagem de "está no ar" |
 
 ## Testes

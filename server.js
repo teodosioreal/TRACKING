@@ -47,9 +47,11 @@ import {
   visitorsPage,
   salesPage,
   ORIGIN_FILTERS,
+  loginPage,
 } from './src/views.js'
 import { SOURCES } from './src/source.js'
 import { readVersion } from './src/version.js'
+import { COOKIE, sessionManager, readCookie, sessionCookie, safeNext, loginLimiter } from './src/session.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 if (existsSync(join(here, '.env'))) process.loadEnvFile(join(here, '.env'))
@@ -132,7 +134,7 @@ function send(res, status, body, type = 'text/plain; charset=utf-8', extra = {})
 }
 
 const html = (res, body, status = 200) => send(res, status, body, 'text/html; charset=utf-8')
-const redirect = (res, to) => send(res, 303, '', 'text/plain', { Location: to })
+const redirect = (res, to, headers = {}) => send(res, 303, '', 'text/plain', { Location: to, ...headers })
 
 const CORS = { 'Access-Control-Allow-Origin': '*' }
 
@@ -152,11 +154,50 @@ function readBody(req, limit = 16 * 1024) {
   })
 }
 
+const sessions = sessionManager({ secretKey: cfg.secretKey, user: cfg.adminUser, password: cfg.adminPassword })
+const limiter = loginLimiter()
+
 function isAdmin(req) {
-  const h = req.headers.authorization || ''
-  if (!h.startsWith('Basic ')) return false
-  const [user, ...rest] = Buffer.from(h.slice(6), 'base64').toString().split(':')
-  return safeEqual(user, cfg.adminUser) && safeEqual(rest.join(':'), cfg.adminPassword)
+  return sessions.valid(readCookie(req, COOKIE))
+}
+
+// Cookie "Secure" quando o painel é acessado por HTTPS (o Nginx avisa pelo
+// X-Forwarded-Proto) ou o PUBLIC_URL é https.
+const secureCookie = (req) => req.headers['x-forwarded-proto'] === 'https' || cfg.publicUrl.startsWith('https://')
+
+async function handleLogin(req, res, url) {
+  if (url.pathname === '/login' && req.method === 'GET') {
+    if (isAdmin(req)) redirect(res, safeNext(url.searchParams.get('next')))
+    else html(res, loginPage({ next: safeNext(url.searchParams.get('next')) }))
+    return true
+  }
+  if (url.pathname === '/login' && req.method === 'POST') {
+    const ip = clientIp(req)
+    const form = new URLSearchParams(await readBody(req, 4096))
+    const next = safeNext(form.get('next'))
+    if (!sameOrigin(req)) {
+      send(res, 403, 'origem inválida')
+      return true
+    }
+    if (limiter.blocked(ip)) {
+      html(res, loginPage({ next, error: 'Muitas tentativas. Espere 15 minutos e tente de novo.' }), 429)
+      return true
+    }
+    if (safeEqual(form.get('user') || '', cfg.adminUser) && safeEqual(form.get('password') || '', cfg.adminPassword)) {
+      limiter.reset(ip)
+      redirect(res, next, { 'Set-Cookie': sessionCookie(sessions.create(), { secure: secureCookie(req) }) })
+      return true
+    }
+    limiter.fail(ip)
+    console.log(`[login] falhou para ${ip}`)
+    html(res, loginPage({ next, error: 'Usuário ou senha incorretos.' }), 401)
+    return true
+  }
+  if (url.pathname === '/sair' && req.method === 'POST') {
+    redirect(res, '/login', { 'Set-Cookie': sessionCookie('', { secure: secureCookie(req), maxAge: 0 }) })
+    return true
+  }
+  return false
 }
 
 // Formulários do painel só podem vir do próprio painel.
@@ -555,10 +596,13 @@ async function handleAdmin(req, res, url) {
 async function handle(req, res) {
   const url = new URL(req.url, 'http://x')
   if (await handlePublic(req, res, url)) return
+  if (await handleLogin(req, res, url)) return
   if (!isAdmin(req)) {
-    return send(res, 401, 'login necessário', 'text/plain; charset=utf-8', {
-      'WWW-Authenticate': 'Basic realm="Tracking", charset="UTF-8"',
-    })
+    // Navegação normal vai para a tela de login; chamadas internas (fetch) recebem 401.
+    if (req.method === 'GET' && String(req.headers.accept || '').includes('text/html')) {
+      return redirect(res, `/login?next=${encodeURIComponent(url.pathname + url.search)}`)
+    }
+    return send(res, 401, 'login necessário')
   }
   return handleAdmin(req, res, url)
 }

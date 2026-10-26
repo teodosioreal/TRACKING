@@ -38,6 +38,7 @@ a{color:var(--accent)}code{font-size:12px}
 .mainnav a{display:flex;align-items:center;gap:7px;color:var(--top-text);text-decoration:none;padding:0 12px;font-weight:500;border-bottom:2px solid transparent;white-space:nowrap}
 .mainnav a:hover{color:#fff}.mainnav a.on{color:#fff;border-bottom-color:#3b82f6}
 .mainnav svg{width:16px;height:16px;flex:none}
+.logout{background:transparent;border-color:rgba(255,255,255,.18);color:var(--top-text);padding:5px 11px;font-size:12px}.logout:hover{color:#fff;border-color:rgba(255,255,255,.4)}
 .ver{margin-left:auto;font-size:11.5px;color:var(--top-text);text-decoration:none;text-align:right;line-height:1.35;white-space:nowrap}.ver:hover{color:#fff}
 .content{padding:22px 28px 56px;max-width:1280px;margin:0 auto;width:100%}
 h2.title{font-size:20px;letter-spacing:-.01em;margin:0}.sub{color:var(--muted);margin:2px 0 0}
@@ -219,6 +220,7 @@ function layout(title, active, body, extraJs = '') {
 <a class="logo" href="/"><span class="mk">T</span>Tracking</a>
 <nav class="mainnav">${link('/', 'painel', 'Visão geral')}${link('/visitantes', 'visitantes', 'Visitantes')}${link('/vendas', 'vendas', 'Vendas')}${link('/produtos', 'produtos', 'Produtos')}${link('/configuracoes', 'config', 'Configurações')}</nav>
 <a class="ver" href="/configuracoes#versao" title="${esc(app.version.message || '')}">${versionLabel()}</a>
+<form method="post" action="/sair" style="margin:0"><button type="submit" class="logout">Sair</button></form>
 </div></header>
 <main class="content">${healthAlert()}${body}</main>
 <script>${SCRIPT}${extraJs}</script>
@@ -1012,4 +1014,24 @@ ${kpi('Reembolsos', refunds)}
 ${body}</section>
 <p class="muted">“Sem clique”: a venda chegou da BuyGoods sem um ID de visita do rastreador (o comprador não passou pela página com o script, ou o link não levou o subid). Essas vendas não vão para o Google Ads.</p>`,
   )
+}
+
+// ---------------------------------------------------------------- Login
+
+export function loginPage({ next = '/', error = '' } = {}) {
+  return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Entrar — Tracking</title><style>${CSS}
+.login{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px 16px;background:var(--top)}
+.login form{width:100%;max-width:360px;background:var(--card);border-radius:14px;padding:26px 24px;display:grid;gap:14px;box-shadow:0 20px 50px rgba(0,0,0,.35)}
+.login .logo{color:var(--text);padding:0 0 4px}.login label b{display:block;margin-bottom:4px;font-size:12.5px}
+.login input[type=password]{font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--text);width:100%}
+.login button{width:100%;padding:10px}</style></head><body>
+<div class="login"><form method="post" action="/login">
+<div class="logo"><span class="mk">T</span>Tracking</div>
+${error ? `<div class="flash bad" style="margin:0">${esc(error)}</div>` : ''}
+<input type="hidden" name="next" value="${esc(next)}">
+<label><b>Usuário</b><input type="text" name="user" autocomplete="username" required autofocus></label>
+<label><b>Senha</b><input type="password" name="password" autocomplete="current-password" required></label>
+<button type="submit" class="primary">Entrar</button>
+</form></div></body></html>`
 }
