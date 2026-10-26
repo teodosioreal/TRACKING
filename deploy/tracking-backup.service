@@ -1,0 +1,8 @@
+[Unit]
+Description=Backup diário do banco do rastreador
+
+[Service]
+Type=oneshot
+User=www-data
+WorkingDirectory=/opt/tracking
+ExecStart=/usr/bin/node --disable-warning=ExperimentalWarning deploy/backup.js

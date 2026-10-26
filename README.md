@@ -53,9 +53,20 @@ ocupar as portas 80/443):
 
 Teste: `https://tracking.odingdong.tech/saude` deve responder `ok`.
 
-Atualizar depois: `cd /opt/tracking && sudo git pull && sudo systemctl restart tracking`.
+## Atualização automática e backup
 
-**Backup:** o banco inteiro é a pasta `dados/`. Copie ela com frequência.
+```bash
+cp deploy/tracking-update.* deploy/tracking-backup.* /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now tracking-update.timer tracking-backup.timer
+```
+
+- **Atualização:** a cada minuto a VPS verifica a branch `main` no GitHub.
+  Se tiver commit novo, ela puxa, roda os testes, reinicia e confere
+  `/saude`. Se algo falhar, volta sozinha para a versão anterior e não
+  tenta de novo a mesma versão. Log: `journalctl -u tracking-update -n 50`.
+- **Backup:** todo dia às 04:00 grava uma cópia do banco em
+  `dados/backups/` e guarda os últimos 14 dias.
 
 ## Configurar
 

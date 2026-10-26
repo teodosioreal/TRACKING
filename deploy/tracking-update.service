@@ -1,0 +1,7 @@
+[Unit]
+Description=Atualiza o rastreador a partir do GitHub
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/opt/tracking/.env
+ExecStart=/opt/tracking/deploy/atualizar.sh
