@@ -1,6 +1,7 @@
 // HTML do painel, renderizado no servidor.
 import { PERIODS } from './stats.js'
 import { PLATFORMS, DEFAULT_PARAM, trackingParam } from './products.js'
+import { SOURCES, uaInfo, referrerHost } from './source.js'
 
 export const esc = (v) =>
   String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c])
@@ -21,118 +22,134 @@ function ago(iso, now = Date.now()) {
 }
 
 const CSS = `
-:root{color-scheme:light;--bg:#f4f5f7;--card:#fff;--text:#111318;--text2:#3d424d;--muted:#6b7280;--line:#e6e8ec;--soft:#f8f9fb;--accent:#2563eb;--accent-soft:#eaf1fe;
---series-1:#2a78d6;--ok:#15803d;--okbg:#ecfdf3;--warn:#a16207;--warnbg:#fefce8;--bad:#b91c1c;--badbg:#fef2f2}
-@media (prefers-color-scheme:dark){:root{color-scheme:dark;--bg:#0c0e12;--card:#15181e;--text:#eceef2;--text2:#c5c9d2;--muted:#9aa1ad;--line:#262a33;--soft:#1a1e25;--accent:#60a5fa;--accent-soft:#16233a;
---series-1:#3987e5;--ok:#4ade80;--okbg:#0f2a1b;--warn:#facc15;--warnbg:#2a250f;--bad:#f87171;--badbg:#2c1414}}
-*{box-sizing:border-box}html,body{margin:0}body{background:var(--bg);color:var(--text);font:14px/1.5 Inter,system-ui,-apple-system,Segoe UI,Roboto,sans-serif;-webkit-font-smoothing:antialiased}
-a{color:var(--accent)}code{font-size:12.5px}
-.top{background:var(--card);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}
-.top-in{max-width:1240px;margin:0 auto;padding:0 32px;display:flex;align-items:center;gap:28px}
-.logo{display:flex;align-items:center;gap:10px;color:var(--text);text-decoration:none;font-weight:700;font-size:16px;padding:14px 0}
-.logo .mk{width:30px;height:30px;border-radius:8px;background:linear-gradient(135deg,#3b82f6,#1d4ed8);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800}
-.mainnav{display:flex;gap:4px;align-self:stretch;overflow-x:auto}
-.mainnav a{display:flex;align-items:center;gap:8px;color:var(--muted);text-decoration:none;padding:0 12px;font-weight:500;border-bottom:2px solid transparent;white-space:nowrap}
-.mainnav a:hover{color:var(--text)}.mainnav a.on{color:var(--text);border-bottom-color:var(--accent)}
-.mainnav svg{width:17px;height:17px;flex:none}
-.ver{margin-left:auto;font-size:12px;color:var(--muted);text-decoration:none;text-align:right;line-height:1.35;white-space:nowrap}.ver:hover{color:var(--text)}
-.content{padding:28px 32px 64px;max-width:1240px;margin:0 auto;width:100%}
-h2.title{font-size:22px;letter-spacing:-.01em;margin:0 0 2px}.sub{color:var(--muted);margin:0 0 20px}
-.page-head{display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end;justify-content:space-between;margin-bottom:20px}.page-head .sub{margin:0}
-.filters{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
-.seg{display:inline-flex;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:3px;flex-wrap:wrap}
-.seg a{padding:6px 12px;border-radius:7px;color:var(--text2);text-decoration:none;font-weight:500;font-size:13px}.seg a.on{background:var(--accent);color:#fff}
-select,input[type=text],input[type=url]{font:inherit;padding:9px 11px;border:1px solid var(--line);border-radius:9px;background:var(--card);color:var(--text);width:100%}
-.filters select{width:auto;min-width:200px}
+:root{color-scheme:light;--bg:#eef1f5;--card:#fff;--text:#0f172a;--text2:#334155;--muted:#64748b;--line:#e2e8f0;--soft:#f6f8fb;--accent:#2563eb;--accent-soft:#e8effd;
+--top:#0b1220;--top-text:#94a3b8;--series-1:#2a78d6;--ok:#15803d;--okbg:#e9f8ef;--warn:#a16207;--warnbg:#fdf6e3;--bad:#b91c1c;--badbg:#fdecec;
+--o-pago:#2a78d6;--o-organico:#1baf7a;--o-referencia:#6250d6;--o-direto:#94a3b8;--o-sem:#eb6834;--o-teste:#eda100;--shadow:0 1px 2px rgba(15,23,42,.06),0 1px 3px rgba(15,23,42,.04)}
+@media (prefers-color-scheme:dark){:root{color-scheme:dark;--bg:#0a0d13;--card:#121721;--text:#e8ecf3;--text2:#c3cad6;--muted:#8a94a6;--line:#232a36;--soft:#171d28;--accent:#5b9cf5;--accent-soft:#15233a;
+--top:#06080d;--top-text:#8a94a6;--series-1:#3987e5;--ok:#4ade80;--okbg:#0f2a1b;--warn:#facc15;--warnbg:#2a250f;--bad:#f87171;--badbg:#2c1414;
+--o-pago:#3987e5;--o-organico:#199e70;--o-referencia:#9085e9;--o-direto:#6b7280;--o-sem:#d95926;--o-teste:#c98500;--shadow:none}}
+*{box-sizing:border-box}html,body{margin:0}body{background:var(--bg);color:var(--text);font:13.5px/1.5 Inter,system-ui,-apple-system,Segoe UI,Roboto,sans-serif;-webkit-font-smoothing:antialiased}
+a{color:var(--accent)}code{font-size:12px}
+.top{background:var(--top);position:sticky;top:0;z-index:5}
+.top-in{max-width:1280px;margin:0 auto;padding:0 28px;display:flex;align-items:center;gap:26px}
+.logo{display:flex;align-items:center;gap:10px;color:#fff;text-decoration:none;font-weight:700;font-size:15px;padding:12px 0}
+.logo .mk{width:28px;height:28px;border-radius:8px;background:linear-gradient(135deg,#3b82f6,#1d4ed8);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px}
+.mainnav{display:flex;gap:2px;align-self:stretch;overflow-x:auto}
+.mainnav a{display:flex;align-items:center;gap:7px;color:var(--top-text);text-decoration:none;padding:0 12px;font-weight:500;border-bottom:2px solid transparent;white-space:nowrap}
+.mainnav a:hover{color:#fff}.mainnav a.on{color:#fff;border-bottom-color:#3b82f6}
+.mainnav svg{width:16px;height:16px;flex:none}
+.ver{margin-left:auto;font-size:11.5px;color:var(--top-text);text-decoration:none;text-align:right;line-height:1.35;white-space:nowrap}.ver:hover{color:#fff}
+.content{padding:22px 28px 56px;max-width:1280px;margin:0 auto;width:100%}
+h2.title{font-size:20px;letter-spacing:-.01em;margin:0}.sub{color:var(--muted);margin:2px 0 0}
+.page-head{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;justify-content:space-between;margin-bottom:16px}
+.filters{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.seg{display:inline-flex;background:var(--card);border:1px solid var(--line);border-radius:9px;padding:3px;flex-wrap:wrap;box-shadow:var(--shadow)}
+.seg a{padding:5px 11px;border-radius:6px;color:var(--text2);text-decoration:none;font-weight:500;font-size:12.5px}.seg a.on{background:var(--top);color:#fff}
+select,input[type=text],input[type=url]{font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--text);width:100%}
+.filters select{width:auto;min-width:180px;box-shadow:var(--shadow)}
 .kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:12px}
-.kpis.minor{grid-template-columns:repeat(5,minmax(0,1fr));margin-bottom:20px}
-.kpi{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 18px}
-.kpi span{color:var(--muted);font-size:12.5px;font-weight:500}.kpi b{display:block;font-size:26px;letter-spacing:-.02em;margin-top:4px;font-variant-numeric:tabular-nums}
-.kpi small{display:block;color:var(--muted);font-size:12.5px;margin-top:2px}
-.kpis.minor .kpi{padding:12px 14px}.kpis.minor .kpi b{font-size:18px}
-.kpi.hero{border-color:transparent;background:linear-gradient(135deg,#1d4ed8,#2563eb);color:#fff}.kpi.hero span,.kpi.hero small{color:rgba(255,255,255,.8)}
-section{background:var(--card);border:1px solid var(--line);border-radius:12px;margin-bottom:18px;overflow:hidden}
-section>h3{font-size:15px;margin:0;padding:14px 18px;border-bottom:1px solid var(--line);display:flex;gap:10px;align-items:center}
-section>h3 .right{margin-left:auto;font-weight:500;color:var(--muted);font-size:13px}
-.num{display:inline-flex;width:24px;height:24px;border-radius:999px;background:var(--accent);color:#fff;font-size:13px;align-items:center;justify-content:center;flex:none}
-.tabs{display:flex;gap:4px;padding:0 12px;border-bottom:1px solid var(--line);overflow-x:auto}
-.tabs a{padding:13px 10px;color:var(--muted);text-decoration:none;font-weight:500;border-bottom:2px solid transparent;white-space:nowrap}
-.tabs a.on{color:var(--text);border-bottom-color:var(--accent)}.tabs .count{font-size:12px;background:var(--soft);border:1px solid var(--line);border-radius:999px;padding:0 7px;margin-left:4px}
-.scroll{overflow-x:auto}table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:left;padding:10px 16px;border-bottom:1px solid var(--line);white-space:nowrap}
-th{color:var(--muted);font-weight:500;font-size:12px;background:var(--soft)}td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}tr:last-child td{border-bottom:0}tbody tr:hover td{background:var(--soft)}
-.tag{display:inline-block;padding:1px 8px;border-radius:999px;font-size:12px;font-weight:500;border:1px solid var(--line)}
-.tag.ok{background:var(--okbg);border-color:transparent}.tag.bad{background:var(--badbg);border-color:transparent}.tag.warn{background:var(--warnbg);border-color:transparent}
+.kpis.minor{grid-template-columns:repeat(5,minmax(0,1fr));margin-bottom:16px}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;box-shadow:var(--shadow)}
+.kpi span{color:var(--muted);font-size:12px;font-weight:500}.kpi b{display:block;font-size:24px;letter-spacing:-.02em;margin-top:2px;font-variant-numeric:tabular-nums}
+.kpi small{display:block;color:var(--muted);font-size:12px;margin-top:1px}
+.kpis.minor .kpi{padding:10px 14px}.kpis.minor .kpi b{font-size:17px}
+.kpi.hero{border-color:transparent;background:linear-gradient(135deg,#1e3a8a,#2563eb);color:#fff}.kpi.hero span,.kpi.hero small{color:rgba(255,255,255,.78)}
+section{background:var(--card);border:1px solid var(--line);border-radius:12px;margin-bottom:14px;overflow:hidden;box-shadow:var(--shadow)}
+section>h3{font-size:14px;margin:0;padding:11px 16px;border-bottom:1px solid var(--line);display:flex;gap:10px;align-items:center;background:var(--soft)}
+section>h3 .right{margin-left:auto;font-weight:500;color:var(--muted);font-size:12.5px}
+.num{display:inline-flex;width:22px;height:22px;border-radius:999px;background:var(--top);color:#fff;font-size:12px;align-items:center;justify-content:center;flex:none}
+.tabs{display:flex;gap:2px;padding:0 10px;border-bottom:1px solid var(--line);overflow-x:auto}
+.tabs a{padding:11px 10px;color:var(--muted);text-decoration:none;font-weight:500;border-bottom:2px solid transparent;white-space:nowrap}
+.tabs a.on{color:var(--text);border-bottom-color:var(--accent)}.tabs .count{font-size:11.5px;background:var(--soft);border:1px solid var(--line);border-radius:999px;padding:0 6px;margin-left:4px}
+.scroll{overflow-x:auto}table{width:100%;border-collapse:collapse;font-size:12.5px}th,td{text-align:left;padding:8px 14px;border-bottom:1px solid var(--line);white-space:nowrap}
+th{color:var(--muted);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:.03em;background:var(--soft)}td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}tr:last-child td{border-bottom:0}tbody tr:hover td{background:var(--soft)}
+td .sub2{display:block;color:var(--muted);font-size:11.5px}
+.tag{display:inline-block;padding:1px 8px;border-radius:999px;font-size:11.5px;font-weight:600;border:1px solid var(--line)}
+.tag.ok{background:var(--okbg);border-color:transparent;color:var(--ok)}.tag.bad{background:var(--badbg);border-color:transparent;color:var(--bad)}.tag.warn{background:var(--warnbg);border-color:transparent;color:var(--warn)}
+.otag{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:500;color:var(--text2)}.otag i{width:8px;height:8px;border-radius:999px;display:inline-block;background:var(--o-direto)}
+.otag.pago i,.otag.pago_outro i{background:var(--o-pago)}.otag.organico i{background:var(--o-organico)}.otag.referencia i{background:var(--o-referencia)}.otag.sem_clique i{background:var(--o-sem)}.otag.teste i{background:var(--o-teste)}
 .ok{color:var(--ok)}.bad{color:var(--bad)}.warn{color:var(--warn)}.muted{color:var(--muted)}
-.empty{padding:28px 18px;color:var(--muted);text-align:center}
-.box{padding:18px}.box p{margin:0 0 10px}.box ol{margin:0 0 12px;padding-left:20px}.box li{margin-bottom:10px}
-.code{display:flex;gap:8px;align-items:flex-start;margin:6px 0 14px}
-.code pre{flex:1;min-width:0;margin:0;padding:10px 12px;background:var(--soft);border:1px solid var(--line);border-radius:9px;white-space:pre-wrap;word-break:break-all;font-size:12.5px}
-button,.btn{font:inherit;font-weight:500;display:inline-block;padding:8px 14px;border-radius:9px;border:1px solid var(--line);background:var(--card);color:var(--text);cursor:pointer;text-decoration:none;white-space:nowrap}
+.empty{padding:26px 16px;color:var(--muted);text-align:center}
+.box{padding:14px 16px}.box p{margin:0 0 8px}.box ol{margin:0 0 10px;padding-left:20px}.box li{margin-bottom:7px}
+.code{display:flex;gap:8px;align-items:flex-start;margin:6px 0 12px}
+.code pre{flex:1;min-width:0;margin:0;padding:9px 11px;background:var(--soft);border:1px solid var(--line);border-radius:8px;white-space:pre-wrap;word-break:break-all;font-size:12px}
+button,.btn{font:inherit;font-weight:500;display:inline-block;padding:7px 13px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--text);cursor:pointer;text-decoration:none;white-space:nowrap}
 button:hover,.btn:hover{border-color:var(--muted)}
 .btn.primary,button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
-.btn.danger,button.danger{color:var(--bad)}
-.actions{display:flex;flex-wrap:wrap;gap:8px;margin:4px 0 12px}
-button.mini{padding:3px 9px;font-size:12px}td form{margin:0}
-.check{list-style:none;margin:0;padding:0}.check li{display:flex;gap:12px;padding:13px 18px;border-bottom:1px solid var(--line)}.check li:last-child{border-bottom:0}
-.check .ic{flex:none;width:26px;height:26px;border-radius:999px;display:flex;align-items:center;justify-content:center;font-weight:700}
+.btn.danger,button.danger{color:var(--bad)}button.danger.solid{background:var(--bad);border-color:var(--bad);color:#fff}
+button.mini,.btn.mini{padding:2px 9px;font-size:11.5px}td form{margin:0;display:inline}
+.actions{display:flex;flex-wrap:wrap;gap:8px;margin:4px 0 10px}
+.check{list-style:none;margin:0;padding:0}.check li{display:flex;gap:12px;padding:11px 16px;border-bottom:1px solid var(--line)}.check li:last-child{border-bottom:0}
+.check .ic{flex:none;width:24px;height:24px;border-radius:999px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px}
 .check .s-ok .ic{background:var(--okbg);color:var(--ok)}.check .s-wait .ic{background:var(--soft);color:var(--muted);border:1px solid var(--line)}.check .s-bad .ic{background:var(--badbg);color:var(--bad)}.check .s-warn .ic{background:var(--warnbg);color:var(--warn)}
-.check li>div>b{display:block}.check span{color:var(--muted);font-size:13px;word-break:break-word}
-.form{padding:18px;display:grid;gap:16px;max-width:640px}.form label b{display:block;margin-bottom:4px}.form .hint{color:var(--muted);font-size:12.5px;margin-top:4px}.form .err{color:var(--bad);font-size:12.5px;margin-top:4px}
-.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px}
-.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 18px;text-decoration:none;color:var(--text);display:block}
-.card:hover{border-color:var(--accent)}.card h4{margin:0 0 4px;font-size:15px}.card .stats{display:flex;gap:18px;margin-top:12px;font-size:13px;color:var(--muted)}.card .stats b{color:var(--text)}
-.flash{padding:11px 14px;border-radius:10px;margin-bottom:16px;background:var(--okbg);color:var(--ok);border:1px solid var(--line)}
-.flash.bad{background:var(--badbg);color:var(--bad)}
-.alert{display:flex;gap:12px;padding:14px 16px;border-radius:12px;margin-bottom:18px;background:var(--badbg);border:1px solid var(--bad);color:var(--text)}
+.check li>div>b{display:block}.check span{color:var(--muted);font-size:12.5px;word-break:break-word}
+.form{padding:16px;display:grid;gap:14px;max-width:680px}.form label b{display:block;margin-bottom:4px}.form .hint{color:var(--muted);font-size:12px;margin-top:4px}.form .err{color:var(--bad);font-size:12px;margin-top:4px}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;text-decoration:none;color:var(--text);display:block;box-shadow:var(--shadow)}
+.card:hover{border-color:var(--accent)}.card h4{margin:0 0 2px;font-size:14.5px}.card .stats{display:flex;gap:16px;margin-top:10px;font-size:12.5px;color:var(--muted)}.card .stats b{color:var(--text)}
+.flash{padding:10px 14px;border-radius:10px;margin-bottom:14px;background:var(--okbg);color:var(--ok);border:1px solid var(--line)}
+.flash.bad{background:var(--badbg);color:var(--bad)}.flash.info{background:var(--accent-soft);color:var(--text)}
+.alert{display:flex;gap:12px;padding:12px 16px;border-radius:12px;margin-bottom:16px;background:var(--badbg);border:1px solid var(--bad);color:var(--text)}
 .alert b{color:var(--bad)}.alert p{margin:2px 0 0}.alert code{background:var(--card);padding:1px 6px;border-radius:5px}
-.conv{margin-bottom:16px}.conv .row{display:flex;gap:8px;margin-top:4px}.conv .row input{flex:1;min-width:0}.conv .hint{color:var(--muted);font-size:12.5px;margin-top:6px}
+.conv{margin-bottom:12px}.conv .row{display:flex;gap:8px;margin-top:4px}.conv .row input{flex:1;min-width:0}.conv .hint{color:var(--muted);font-size:12px;margin-top:6px}
 #verify-result,#test-status{margin-top:6px;line-height:1.7}
-.chart{position:relative;padding:18px 18px 10px}
-.chart .plot{position:relative;height:200px;margin-left:56px}
+.chart{position:relative;padding:16px 16px 8px}
+.chart .plot{position:relative;height:190px;margin-left:56px}
 .chart .grid div{position:absolute;left:0;right:0;border-top:1px solid var(--line)}
-.chart .grid span{position:absolute;right:calc(100% + 8px);transform:translateY(-50%);font-size:11.5px;color:var(--muted);white-space:nowrap}
+.chart .grid span{position:absolute;right:calc(100% + 8px);transform:translateY(-50%);font-size:11px;color:var(--muted);white-space:nowrap}
 .chart .bars{position:absolute;inset:0;display:flex;align-items:flex-end}
 .chart .col{flex:1;height:100%;display:flex;align-items:flex-end;justify-content:center;padding:0 1px;cursor:default}
 .chart .col:hover{background:var(--soft)}
 .chart .b{width:100%;max-width:30px;background:var(--series-1);border-radius:4px 4px 0 0;min-height:0}
-.chart .xl{position:relative;height:22px;margin-left:56px}.chart .xl span{position:absolute;transform:translateX(-50%);font-size:11.5px;color:var(--muted);top:6px;white-space:nowrap}
-.chart .tip{position:absolute;pointer-events:none;background:var(--card);border:1px solid var(--line);border-radius:9px;padding:8px 10px;font-size:12.5px;box-shadow:0 6px 20px rgba(0,0,0,.12);white-space:nowrap;z-index:2}
+.chart .xl{position:relative;height:22px;margin-left:56px}.chart .xl span{position:absolute;transform:translateX(-50%);font-size:11px;color:var(--muted);top:6px;white-space:nowrap}
+.chart .tip{position:absolute;pointer-events:none;background:var(--card);border:1px solid var(--line);border-radius:9px;padding:8px 10px;font-size:12px;box-shadow:0 6px 20px rgba(0,0,0,.12);white-space:nowrap;z-index:2}
 .chart .tip b{display:block;margin-bottom:2px}
-details.tbl{border-top:1px solid var(--line)}details.tbl summary{padding:10px 18px;color:var(--muted);cursor:pointer;font-size:13px}
-.card-head{display:flex;gap:12px;align-items:center;margin-bottom:12px}
+details.tbl{border-top:1px solid var(--line)}details.tbl summary{padding:9px 16px;color:var(--muted);cursor:pointer;font-size:12.5px}
+.split{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:14px;align-items:start}
+.bars-h{padding:10px 16px 14px}.bars-h .row{display:grid;grid-template-columns:130px 1fr 70px 90px;gap:10px;align-items:center;padding:5px 0;font-size:12.5px}
+.bars-h .track{height:8px;background:var(--soft);border-radius:999px;overflow:hidden;border:1px solid var(--line)}.bars-h .track div{height:100%;border-radius:999px;background:var(--o-direto)}
+.bars-h .row.pago .track div,.bars-h .row.pago_outro .track div{background:var(--o-pago)}.bars-h .row.organico .track div{background:var(--o-organico)}.bars-h .row.referencia .track div{background:var(--o-referencia)}.bars-h .row.sem_clique .track div{background:var(--o-sem)}
+.bars-h .n{text-align:right;font-variant-numeric:tabular-nums;color:var(--text2)}
+.toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:10px 14px;border-bottom:1px solid var(--line)}
+.livebadge{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--ok);font-weight:600}.livebadge i{width:8px;height:8px;border-radius:999px;background:var(--ok);animation:pulse 1.4s ease-in-out infinite}
+.steps{counter-reset:st;list-style:none;margin:0;padding:0}.steps>li{position:relative;padding:12px 16px 12px 52px;border-bottom:1px solid var(--line);margin:0}.steps>li:last-child{border-bottom:0}
+.steps>li::before{counter-increment:st;content:counter(st);position:absolute;left:16px;top:12px;width:22px;height:22px;border-radius:999px;background:var(--accent-soft);color:var(--accent);font-weight:700;font-size:12px;display:flex;align-items:center;justify-content:center}
+.steps>li>b:first-child{display:block;margin-bottom:2px}.steps .where{display:inline-block;background:var(--soft);border:1px solid var(--line);border-radius:6px;padding:1px 7px;font-size:12px;margin:2px 0}
+.danger-zone{border-color:var(--bad)}.danger-zone>h3{color:var(--bad);background:var(--badbg)}
+.card-head{display:flex;gap:12px;align-items:center;margin-bottom:10px}
 .thumb{border-radius:10px;object-fit:cover;flex:none;background:var(--soft);border:1px solid var(--line)}
 .thumb.ph,.pimg.ph{display:inline-flex;align-items:center;justify-content:center;background:var(--accent-soft);color:var(--accent);font-weight:700;font-size:18px;border:1px solid var(--line)}
-.prog{margin:4px 0}.prog-top{display:flex;justify-content:space-between;font-size:12.5px;color:var(--muted);margin-bottom:5px}.prog-top b{color:var(--text)}
-.prog-bar{height:8px;border-radius:999px;background:var(--soft);border:1px solid var(--line);overflow:hidden}.prog-bar div{height:100%;border-radius:999px;background:var(--accent)}
+.prog{margin:4px 0}.prog-top{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-bottom:5px}.prog-top b{color:var(--text)}
+.prog-bar{height:7px;border-radius:999px;background:var(--soft);border:1px solid var(--line);overflow:hidden}.prog-bar div{height:100%;border-radius:999px;background:var(--accent)}
 .prog.ok .prog-bar div{background:var(--ok)}.prog.low .prog-bar div{background:var(--warn)}
-.phead{display:flex;gap:18px;align-items:center;margin-bottom:18px;flex-wrap:wrap}
-.phead-main{flex:1;min-width:220px}.phead-main .sub{margin:0}.crumbs{font-size:12.5px;color:var(--muted)}.crumbs a{color:var(--muted);text-decoration:none}
-.phead-prog{width:260px}.phead-prog small{display:block;margin-top:4px;font-size:12px}
-.imgbtn{position:relative;padding:0;border:0;background:none;border-radius:14px;overflow:hidden;cursor:pointer;flex:none}
-.pimg{width:84px;height:84px;border-radius:14px;object-fit:cover;display:block;border:1px solid var(--line);background:var(--soft)}
-.pimg.ph{font-size:30px}
-.imgedit{position:absolute;inset:auto 0 0 0;background:rgba(0,0,0,.55);color:#fff;font-size:11.5px;padding:3px 0;text-align:center;opacity:0;transition:opacity .15s}
+.phead{display:flex;gap:16px;align-items:center;margin-bottom:14px;flex-wrap:wrap;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;box-shadow:var(--shadow)}
+.phead-main{flex:1;min-width:220px}.crumbs{font-size:12px;color:var(--muted)}.crumbs a{color:var(--muted);text-decoration:none}
+.phead-prog{width:250px}.phead-prog small{display:block;margin-top:4px;font-size:11.5px}
+.imgbtn{position:relative;padding:0;border:0;background:none;border-radius:12px;overflow:hidden;cursor:pointer;flex:none}
+.pimg{width:72px;height:72px;border-radius:12px;object-fit:cover;display:block;border:1px solid var(--line);background:var(--soft)}
+.pimg.ph{font-size:26px}
+.imgedit{position:absolute;inset:auto 0 0 0;background:rgba(0,0,0,.55);color:#fff;font-size:11px;padding:2px 0;text-align:center;opacity:0;transition:opacity .15s}
 .imgbtn:hover .imgedit,.imgbtn:focus .imgedit{opacity:1}.imgbtn .pimg.ph+.imgedit{opacity:1;background:rgba(37,99,235,.85)}
-.ptabs{background:var(--card);border:1px solid var(--line);border-radius:12px;margin-bottom:18px;padding:0 8px}
-.dot{display:inline-block;width:8px;height:8px;border-radius:999px;background:var(--line);margin-left:4px;vertical-align:middle}
+.ptabs{background:var(--card);border:1px solid var(--line);border-radius:12px;margin-bottom:14px;padding:0 8px;box-shadow:var(--shadow)}
+.dot{display:inline-block;width:7px;height:7px;border-radius:999px;background:var(--line);margin-left:4px;vertical-align:middle}
 .dot.ok{width:auto;height:auto;background:none;color:var(--ok);font-size:12px}
-.grid2{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:18px;align-items:start}
-.mini-kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.mini-kpis span{display:block;font-size:12px;color:var(--muted)}.mini-kpis b{font-size:18px}
-details.howto{border:1px solid var(--line);border-radius:10px;margin:8px 0;background:var(--soft)}details.howto summary{padding:10px 14px;cursor:pointer;font-weight:600}
-details.howto>ol,details.howto>p,details.howto>table{margin:0 14px 12px}details.howto table td{white-space:normal;vertical-align:top;padding:6px 8px}
+.grid2{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:14px;align-items:start}
+.mini-kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.mini-kpis span{display:block;font-size:11.5px;color:var(--muted)}.mini-kpis b{font-size:17px}
+details.howto{border:1px solid var(--line);border-radius:9px;margin:6px 0;background:var(--soft)}details.howto summary{padding:9px 13px;cursor:pointer;font-weight:600}
+details.howto>ol,details.howto>p,details.howto>table{margin:0 13px 11px}details.howto table td{white-space:normal;vertical-align:top;padding:5px 8px}
 .imgrow{display:flex;gap:16px;align-items:center;flex-wrap:wrap}.imgrow .actions{margin:0}.imgrow form{margin:0}
-@media (max-width:900px){.grid2{grid-template-columns:1fr}.phead-prog{width:100%}}
-.live{display:flex;gap:12px;align-items:flex-start;padding:14px 16px;border:1px dashed var(--line);border-radius:12px;background:var(--soft);margin:10px 0 14px}
-.live b{display:block}.live span{color:var(--muted);font-size:13px;display:block}.live .params{margin-top:6px;word-break:break-all}.live .params code{background:var(--card);border:1px solid var(--line);border-radius:5px;padding:1px 5px;margin:2px 4px 2px 0;display:inline-block}
+.live{display:flex;gap:12px;align-items:flex-start;padding:12px 14px;border:1px dashed var(--line);border-radius:10px;background:var(--soft);margin:8px 0 12px}
+.live b{display:block}.live span{color:var(--muted);font-size:12.5px;display:block}.live .params{margin-top:6px;word-break:break-all}.live .params code{background:var(--card);border:1px solid var(--line);border-radius:5px;padding:1px 5px;margin:2px 4px 2px 0;display:inline-block}
 .live.fresh{border:1px solid var(--ok);background:var(--okbg)}.live.fresh b{color:var(--ok)}
-.live .ic{flex:none;width:26px;height:26px;border-radius:999px;background:var(--ok);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700}
-.pulse{flex:none;width:12px;height:12px;margin:5px 7px;border-radius:999px;background:var(--accent);animation:pulse 1.4s ease-in-out infinite;display:block}
+.live .ic{flex:none;width:24px;height:24px;border-radius:999px;background:var(--ok);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700}
+.pulse{flex:none;width:11px;height:11px;margin:5px 7px;border-radius:999px;background:var(--accent);animation:pulse 1.4s ease-in-out infinite;display:block}
 @keyframes pulse{0%,100%{opacity:.25;transform:scale(.8)}50%{opacity:1;transform:scale(1)}}
-@media (prefers-reduced-motion:reduce){.pulse{animation:none}}
-@media (max-width:1100px){.kpis.minor{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media (prefers-reduced-motion:reduce){.pulse,.livebadge i{animation:none}}
+@media (max-width:1100px){.kpis.minor{grid-template-columns:repeat(3,minmax(0,1fr))}.split{grid-template-columns:1fr}}
 @media (max-width:900px){.top-in{padding:0 16px;gap:12px;flex-wrap:wrap}.logo{padding:10px 0}.mainnav{order:3;width:100%;margin:0 -4px}.mainnav a{padding:10px 8px}.mainnav svg{display:none}
-.content{padding:18px 16px 48px}.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.kpis.minor{grid-template-columns:repeat(2,minmax(0,1fr))}.filters{width:100%}.filters form,.filters select{width:100%}}
-@media (max-width:600px){.conv .row{flex-wrap:wrap}.conv .row input{flex-basis:100%}.code{flex-direction:column}.code button{align-self:flex-end}.kpi b{font-size:22px}.chart .plot,.chart .xl{margin-left:44px}}
+.content{padding:16px 14px 48px}.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.kpis.minor{grid-template-columns:repeat(2,minmax(0,1fr))}.filters{width:100%}.filters form,.filters select{width:100%}
+.grid2{grid-template-columns:1fr}.phead-prog{width:100%}.bars-h .row{grid-template-columns:100px 1fr 50px 80px}}
+@media (max-width:600px){.conv .row{flex-wrap:wrap}.conv .row input{flex-basis:100%}.code{flex-direction:column}.code button{align-self:flex-end}.kpi b{font-size:20px}.chart .plot,.chart .xl{margin-left:44px}}
 `
 
 const SCRIPT = `
@@ -140,7 +157,8 @@ document.addEventListener('click',e=>{const b=e.target.closest('[data-copy]');if
 navigator.clipboard.writeText(document.getElementById(b.dataset.copy).textContent);const t=b.textContent;b.textContent='Copiado ✓';setTimeout(()=>b.textContent=t,1400)})
 document.addEventListener('click',e=>{const b=e.target.closest('[data-copy-input]');if(!b)return;
 navigator.clipboard.writeText(document.getElementById(b.dataset.copyInput).value.trim());const t=b.textContent;b.textContent='Copiado ✓';setTimeout(()=>b.textContent=t,1400)})
-document.addEventListener('submit',e=>{const m=e.target.dataset.confirm;if(m&&!confirm(m))e.preventDefault()})
+document.addEventListener('submit',e=>{const m=e.target.dataset.confirm;if(m&&!confirm(m))e.preventDefault()
+const n=e.target.dataset.confirmName;if(n!==undefined){const t=prompt('Para excluir, digite o nome do produto: '+n);if(t===null||t.trim()!==n.trim()){e.preventDefault();if(t!==null)alert('Nome diferente. Nada foi excluído.')}}})
 const pbl=document.getElementById('pb-live');
 if(pbl){const t0=Date.now(),esc=v=>String(v).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]);
 const ago=s=>s<60?'há '+s+'s':s<3600?'há '+Math.round(s/60)+' min':'há '+Math.round(s/3600)+' h';
@@ -187,6 +205,8 @@ function healthAlert() {
 
 const ICONS = {
   painel: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 3v18h18"/><path d="M7 15v3M12 10v8M17 6v12"/></svg>',
+  visitantes: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="9" cy="8" r="4"/><path d="M2 21c0-4 3-7 7-7s7 3 7 7"/><path d="M17 4a4 4 0 0 1 0 8M22 21c0-3-2-5.5-5-6.5"/></svg>',
+  vendas: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2v20M17 6H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>',
   produtos: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="M3 8l9 5 9-5M12 13v8"/></svg>',
   config: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1"/></svg>',
 }
@@ -197,7 +217,7 @@ function layout(title, active, body, extraJs = '') {
 <title>${esc(title)}</title><style>${CSS}</style></head><body>
 <header class="top"><div class="top-in">
 <a class="logo" href="/"><span class="mk">T</span>Tracking</a>
-<nav class="mainnav">${link('/', 'painel', 'Visão geral')}${link('/produtos', 'produtos', 'Produtos')}${link('/configuracoes', 'config', 'Configurações')}</nav>
+<nav class="mainnav">${link('/', 'painel', 'Visão geral')}${link('/visitantes', 'visitantes', 'Visitantes')}${link('/vendas', 'vendas', 'Vendas')}${link('/produtos', 'produtos', 'Produtos')}${link('/configuracoes', 'config', 'Configurações')}</nav>
 <a class="ver" href="/configuracoes#versao" title="${esc(app.version.message || '')}">${versionLabel()}</a>
 </div></header>
 <main class="content">${healthAlert()}${body}</main>
@@ -293,9 +313,9 @@ function chartHtml(series, currency) {
 <details class="tbl"><summary>Ver em tabela</summary>${tbl}</details>`
 }
 
-export const TABS = { campanhas: 'Campanhas', palavras: 'Palavras-chave', vendas: 'Vendas', visitas: 'Visitas' }
+export const TABS = { campanhas: 'Campanhas', palavras: 'Palavras-chave' }
 
-export function dashboardPage(d, { period, tz, currency, products, productId, series, tab }) {
+export function dashboardPage(d, { period, tz, currency, products, productId, series, tab, origins }) {
   const t = d.totals
   const qs = (o = {}) => {
     const q = new URLSearchParams({ periodo: o.periodo ?? period })
@@ -319,48 +339,9 @@ export function dashboardPage(d, { period, tz, currency, products, productId, se
 
   let tabBody
   if (tab === 'palavras') tabBody = breakdownTable(d.keywords, 'Palavra-chave', currency)
-  else if (tab === 'vendas')
-    tabBody = table(
-      [
-        { label: 'Quando', html: (r) => esc(when(r.created_at, tz)) },
-        { label: 'Status', html: saleStatus },
-        { label: 'Produto', html: (r) => esc(r.produto || r.product || '—') },
-        { label: 'Tipo', html: (r) => esc(r.type) },
-        { label: 'Pedido', html: (r) => esc(r.order_id) },
-        { label: 'Campanha', html: (r) => esc(r.campanha) },
-        { label: 'Palavra-chave', html: (r) => esc(r.palavra) },
-        {
-          label: 'Vai pro Google',
-          html: (r) =>
-            r.status !== 'approved'
-              ? '<span class="muted">não</span>'
-              : r.gclid
-                ? '<span class="tag ok">sim</span>'
-                : '<span class="tag bad">sem gclid</span>',
-        },
-        { label: 'Comissão', n: 1, html: (r) => money(r.amount, currency) },
-      ],
-      d.recentSales,
-      'Nenhuma venda neste período.',
-    )
-  else if (tab === 'visitas')
-    tabBody = table(
-      [
-        { label: 'Quando', html: (r) => esc(when(r.created_at, tz)) + (r.is_test ? ' <span class="tag warn">teste</span>' : '') },
-        { label: 'Produto', html: (r) => esc(r.produto || '—') },
-        { label: 'Campanha', html: (r) => esc(r.campanha) },
-        { label: 'Palavra-chave', html: (r) => esc(r.palavra) },
-        { label: 'Disp.', html: (r) => esc({ m: 'celular', c: 'computador', t: 'tablet' }[r.device] || r.device || '—') },
-        { label: 'Google', html: (r) => (r.gclid ? '<span class="tag ok">gclid</span>' : r.gbraid || r.wbraid ? 'gbraid/wbraid' : '—') },
-        { label: 'Clicou no botão', html: (r) => (r.outbound_at ? `<span class="ok">sim (${r.outbound_count}x)</span>` : '—') },
-        { label: 'ID da visita', html: (r) => `<code class="muted">${esc(r.id)}</code>` },
-      ],
-      d.recentClicks,
-      'Nenhuma visita neste período.',
-    )
   else tabBody = breakdownTable(d.campaigns, 'Campanha', currency)
 
-  const counts = { vendas: d.recentSales.length, visitas: d.recentClicks.length }
+  const counts = {}
   const tabs = Object.entries(TABS)
     .map(
       ([k, v]) =>
@@ -396,10 +377,14 @@ ${kpi('Visitas com gclid', pct(t.google, t.visitas))}
 ${kpi('Reembolsos', t.reembolsos)}
 </div>
 
+<div class="split">
 <section><h3>Comissão por ${series.hourly ? 'hora' : 'dia'}<span class="right">${money(t.comissao, currency)} no período</span></h3>
 ${chartHtml(series, currency)}</section>
+<section><h3>De onde vêm as visitas<span class="right"><a href="/visitantes?periodo=${esc(period)}${productId ? `&produto=${esc(productId)}` : ''}">Ver visitantes →</a></span></h3>
+${originBars(origins, currency)}</section>
+</div>
 
-<section><nav class="tabs">${tabs}</nav>${tabBody}</section>`,
+<section><nav class="tabs">${tabs}<a href="/vendas?periodo=${esc(period)}${productId ? `&produto=${esc(productId)}` : ''}" style="margin-left:auto">Ver vendas →</a></nav>${tabBody}</section>`,
   )
 }
 
@@ -417,7 +402,7 @@ function progressBar(pr) {
 <div class="prog-bar"><div style="width:${pr.pct}%"></div></div></div>`
 }
 
-export function productsPage(products, { currency, archivedCount, showArchived }) {
+export function productsPage(products, { currency, archivedCount, showArchived, flash }) {
   const cards = products.length
     ? `<div class="cards">${products
         .map(
@@ -438,7 +423,7 @@ ${progressBar(p.progress)}
   return layout(
     'Produtos — Tracking',
     'produtos',
-    `<div class="page-head"><div><h2 class="title">${showArchived ? 'Produtos arquivados' : 'Produtos'}</h2>
+    `${flash ? `<div class="flash">${esc(flash)}</div>` : ''}<div class="page-head"><div><h2 class="title">${showArchived ? 'Produtos arquivados' : 'Produtos'}</h2>
 <p class="sub">Cada produto tem seu script, sua conversão no Google Ads e sua planilha.</p></div>
 ${showArchived ? '' : '<a class="btn primary" href="/produtos/novo">+ Novo produto</a>'}</div>
 ${cards}<p>${toggle}</p>`,
@@ -537,11 +522,9 @@ export function checklistHtml(product, st, { tz }) {
 
 const LIVE = '<div class="live" id="pb-live"><span class="pulse"></span><div><b>Carregando…</b></div></div>'
 
-// Ação para corrigir uma venda que era teste da plataforma.
+// Excluir um postback (ex.: teste que chegou com cara de venda).
 const markTest = (r) =>
-  r.status === 'approved'
-    ? `<form method="post" action="/postbacks/${r.id}/teste" data-confirm="Marcar este postback como teste? Ele sai dos totais e da planilha do Google Ads."><button type="submit" class="mini">Era teste</button></form>`
-    : ''
+  `<form method="post" action="/vendas/${r.id}/excluir" data-confirm="Excluir este registro? Ele sai dos números e da planilha do Google Ads. Não tem volta."><button type="submit" class="mini danger">Excluir</button></form>`
 
 export const PRODUCT_TABS = {
   status: 'Status',
@@ -710,31 +693,49 @@ ${pbRows}
 <form method="post" action="/produtos/${pid}/simular-venda" class="actions"><button type="submit">Simular venda de teste</button></form>
 ${st.lastSale && st.lastSale.status === 'test' ? `<p class="ok">✓ Venda de teste ligada a este produto ${ago(st.lastSale.created_at)}.</p>` : ''}</div></section>`
   } else if (tab === 'google') {
-    body = `<section><h3><span class="num">1</span> Nome da conversão</h3><div class="box">
-<form class="conv" method="post" action="/produtos/${pid}/conversao">
+    const where = (t) => `<span class="where">${t}</span>`
+    body = `<div class="flash info">O Google Ads otimiza a campanha com as vendas que o rastreador envia pela planilha. São 3 partes: <b>a conta</b> (uma vez só), <b>a conversão deste produto</b> e <b>a campanha deste produto</b>.</div>
+
+<section><h3>A. Conta do Google Ads <span class="right">uma vez por conta</span></h3><ol class="steps">
+<li><b>Ative a codificação automática (gclid)</b>
+${where('Admin (engrenagem) → Configurações da conta → Codificação automática')} → marque <i>“Adicionar tag ao URL em que as pessoas clicam no meu anúncio”</i> → Salvar.
+<div class="muted">Sem isso o anúncio não manda o gclid e nenhuma venda vai para o Google. <a href="https://support.google.com/google-ads/answer/3095550" target="_blank" rel="noopener">Ajuda ↗</a></div></li>
+<li><b>Cole o sufixo do URL final</b>
+${where('Admin → Configurações da conta → Rastreamento → Sufixo do URL final')}
+${copy('suffix', suffix)}
+<div class="muted">Isso mostra campanha e palavra-chave no rastreador. Deixe o campo <b>Modelo de rastreamento</b> vazio. Se preferir por campanha: ${where('Campanha → Configurações → Opções de URL da campanha → Sufixo do URL final')}.</div></li>
+</ol><div class="box" style="padding-top:0"><a class="btn" href="https://ads.google.com/aw/accountsettings" target="_blank" rel="noopener">Abrir configurações da conta ↗</a></div></section>
+
+<section><h3>B. Conversão deste produto</h3><ol class="steps">
+<li><b>Nome da conversão</b>
+<form class="conv" method="post" action="/produtos/${pid}/conversao" style="margin:6px 0 0">
 <div class="row"><input type="text" id="conv-input" name="conversion_name" value="${esc(product.conversion_name)}" required maxlength="100" aria-label="Nome da conversão">
 <button type="submit">Salvar nome</button><button type="button" data-copy-input="conv-input">Copiar nome</button></div>
-<div class="hint">As vendas deste produto vão para o Google Ads com este nome. Tem que ser <b>idêntico</b> ao nome da ação de conversão lá (maiúsculas, espaços e acentos contam).</div>
-${st.lastRealSale ? `<div class="hint warn">Atenção: este produto já tem vendas. Se o Google Ads já importou vendas com o nome atual, trocar o nome faz ele importar de novo as vendas dos últimos dias na conversão nova (contagem em dobro). Troque só para corrigir um nome que ainda não existe no Google Ads.</div>` : ''}
-</form></div></section>
-
-<section><h3><span class="num">2</span> Crie a ação de conversão no Google Ads</h3><div class="box">
-<p><a class="btn" href="https://ads.google.com/aw/conversions" target="_blank" rel="noopener">Abrir Conversões no Google Ads ↗</a></p>
-<ol><li>Clique em <b>+ Nova ação de conversão → Importar → Conversões de cliques (arquivo/programação)</b>.</li>
-<li>Nome: o nome do passo 1. Categoria: <b>Compra</b>. Valor: <b>“Usar valores diferentes para cada conversão”</b>. Contagem: <b>Todas</b>.</li></ol>
-<p class="muted"><a href="https://support.google.com/google-ads/answer/7014069" target="_blank" rel="noopener">Ajuda do Google: importar conversões de cliques ↗</a></p></div></section>
-
-<section><h3><span class="num">3</span> Programe a planilha</h3><div class="box">
-<ol><li>Em <b>Conversões → Uploads → Programações → +</b>, escolha a fonte <b>HTTPS</b>.</li>
-<li>Cole o link abaixo e escolha <b>a cada 6 horas</b>.</li></ol>
+<div class="hint">Tem que ser <b>idêntico</b> ao nome da ação no Google Ads (maiúsculas, espaços e acentos contam).</div>
+${st.lastRealSale ? `<div class="hint warn">Este produto já tem vendas. Se o Google já importou vendas com o nome atual, trocar o nome faz ele importar de novo na conversão nova (contagem em dobro). Troque só para corrigir um nome que ainda não existe no Google Ads.</div>` : ''}
+</form></li>
+<li><b>Crie a ação de conversão</b>
+${where('Metas → Conversões → Resumo → + Nova ação de conversão → Importar')} → escolha <i>CRMs, arquivos ou outras fontes de dados</i> → <i>Acompanhar conversões de cliques</i> → Continuar.
+<div>Preencha: <b>Categoria</b> Compra · <b>Nome</b> o do passo anterior · <b>Valor</b> “Usar valores diferentes para cada conversão” (moeda USD) · <b>Contagem</b> Todas · <b>Janela de conversão</b> 30 dias · deixe como ação <b>principal</b>.</div></li>
+<li><b>Programe a planilha</b>
+${where('Metas → Conversões → Uploads → Programações → + Nova programação')} → Fonte <b>HTTPS</b> → cole o link → Frequência <b>a cada 6 horas</b> → Salvar.
 ${copy('csv', csv, 'Copiar link')}
-<p class="muted">A planilha deste produto tem ${st.salesForGoogle} venda(s) com gclid. ${st.csvFetch ? `<span class="ok">Lida pelo Google ${ago(st.csvFetch.at)}.</span>` : 'Ainda não foi lida pelo Google.'} <a href="/google-ads.csv?key=${esc(key)}&produto=${pid}" target="_blank">Ver a planilha</a></p></div></section>
+<div class="muted">${st.salesForGoogle} venda(s) com gclid na planilha deste produto. ${st.csvFetch ? `<span class="ok">✓ Lida pelo Google ${ago(st.csvFetch.at)}.</span>` : '<span class="warn">Ainda não foi lida pelo Google.</span>'} <a href="/google-ads.csv?key=${esc(key)}&produto=${pid}" target="_blank">Ver planilha</a> · <a href="https://support.google.com/google-ads/answer/7014069" target="_blank" rel="noopener">Ajuda do Google ↗</a></div></li>
+</ol><div class="box" style="padding-top:0"><a class="btn" href="https://ads.google.com/aw/conversions" target="_blank" rel="noopener">Abrir Conversões ↗</a></div></section>
 
-<section><h3><span class="num">4</span> Configure a conta (uma vez por conta)</h3><div class="box">
-<p><a class="btn" href="https://ads.google.com/aw/accountsettings" target="_blank" rel="noopener">Abrir Configurações da conta ↗</a></p>
-<ol><li>Deixe a <b>codificação automática</b> ativada (é ela que coloca o gclid na URL). <a href="https://support.google.com/google-ads/answer/3095550" target="_blank" rel="noopener">Ajuda ↗</a></li>
-<li>Em <b>Rastreamento → Sufixo do URL final</b>, cole:</li></ol>
-${copy('suffix', suffix)}</div></section>`
+<section><h3>C. Campanha deste produto</h3><ol class="steps">
+<li><b>URL final dos anúncios</b> = a página de review deste produto:
+${product.review_url ? copy('review', product.review_url, 'Copiar') : `<div class="warn">Cadastre o endereço da página em <a href="/produtos/${pid}?aba=config">Configurações</a>.</div>`}
+<div class="muted">Não use encurtador nem redirecionamento no URL final: o gclid precisa chegar na página com o script.</div></li>
+<li><b>Meta da campanha: só a conversão deste produto</b>
+${where('Campanha → Configurações → Metas')} → <i>Usar configurações de meta específicas da campanha</i> → deixe marcada só <b>${esc(product.conversion_name)}</b> → Salvar.
+<div class="muted">Assim a campanha deste produto otimiza só pelas vendas dele, e não pelas de outros produtos da mesma conta.</div></li>
+<li><b>Estratégia de lance</b>
+${where('Campanha → Configurações → Lances')}
+<div>Comece com <b>Maximizar cliques</b> (com limite de CPC) ou <b>CPC manual</b> enquanto ainda não há vendas. Com um volume constante de conversões (algo como 15–30 em 30 dias), mude para <b>Maximizar conversões</b> e, depois, <b>CPA desejado</b> ou <b>ROAS desejado</b>.</div></li>
+<li><b>Confira depois da primeira venda</b>
+<div>Aqui: a venda aparece em <a href="/vendas">Vendas</a> com “Google Ads: na planilha”. No Google: ${where('Metas → Conversões → Uploads')} mostra a importação (pode levar até a próxima programação + algumas horas para aparecer nas colunas).</div></li>
+</ol></section>`
   } else {
     const v = values || product
     const err = (k) => (errors?.[k] ? `<div class="err">${esc(errors[k])}</div>` : '')
@@ -759,9 +760,15 @@ ${copy('suffix', suffix)}</div></section>`
 ${image ? `<form method="post" action="/produtos/${pid}/imagem/remover" data-confirm="Remover a imagem?"><button type="submit" class="danger">Remover</button></form>` : ''}</div></div></div></div></section>
 
 <section><h3>Arquivar</h3><div class="box">
-<p class="muted">Arquivar esconde o produto da lista. Visitas e vendas continuam guardadas e o script continua funcionando.</p>
+<p class="muted">Esconde o produto da lista. Visitas e vendas continuam guardadas e o script continua funcionando.</p>
 <form method="post" action="/produtos/${pid}/${product.archived ? 'reativar' : 'arquivar'}" ${product.archived ? '' : 'data-confirm="Arquivar este produto?"'}>
-<button type="submit" class="${product.archived ? '' : 'danger'}">${product.archived ? 'Reativar produto' : 'Arquivar produto'}</button></form>
+<button type="submit">${product.archived ? 'Reativar produto' : 'Arquivar produto'}</button></form>
+</div></section>
+
+<section class="danger-zone"><h3>Excluir produto</h3><div class="box">
+<p>Apaga o produto, a imagem, <b>todas as visitas dele e as vendas ligadas a essas visitas</b>. O script dele para de registrar. <b>Não tem volta.</b></p>
+<form method="post" action="/produtos/${pid}/excluir" data-confirm-name="${esc(product.name)}">
+<button type="submit" class="danger solid">Excluir produto</button></form>
 </div></section>`
   }
 
@@ -854,5 +861,159 @@ ${
 <div class="row"><input type="text" name="conversion_name" value="${esc(conversionName)}" required maxlength="100"><button type="submit">Salvar</button></div>
 </form>
 </div></section>`,
+  )
+}
+
+// ---------------------------------------------------------------- Origem
+
+const ORIGIN_LABELS = { ...SOURCES, sem_clique: 'Sem clique' }
+export const ORIGIN_FILTERS = ORIGIN_LABELS
+const originTag = (k) => `<span class="otag ${esc(k)}"><i></i>${esc(ORIGIN_LABELS[k] || k || '—')}</span>`
+
+function originBars(rows, currency) {
+  if (!rows.length) return '<div class="empty">Nada neste período.</div>'
+  const max = Math.max(1, ...rows.map((r) => r.visitas))
+  return `<div class="bars-h"><div class="row muted" style="font-size:11px;text-transform:uppercase;letter-spacing:.03em"><span>Origem</span><span>Visitas</span><span class="n">Vendas</span><span class="n">Comissão</span></div>${rows
+    .map(
+      (r) => `<div class="row ${esc(r.origem)}"><span>${originTag(r.origem)}</span>
+<span style="display:flex;gap:8px;align-items:center"><span class="track" style="flex:1"><div style="width:${((r.visitas / max) * 100).toFixed(1)}%"></div></span><span class="n" style="min-width:34px">${r.visitas}</span></span>
+<span class="n">${r.vendas}</span><span class="n">${money(r.comissao, currency)}</span></div>`,
+    )
+    .join('')}</div>`
+}
+
+function filterBar({ base, period, products, productId, extra = '', hidden = {} }) {
+  const q = (o) => {
+    const p = new URLSearchParams({ periodo: period, ...hidden, ...o })
+    if (productId && !('produto' in o)) p.set('produto', productId)
+    for (const [k, v] of [...p]) if (!v) p.delete(k)
+    return `${base}?${p}`
+  }
+  const periods = Object.entries(PERIODS)
+    .map(([k, v]) => `<a href="${q({ periodo: k })}" class="${k === period ? 'on' : ''}">${v}</a>`)
+    .join('')
+  const options = [`<option value="">Todos os produtos</option>`]
+    .concat(products.map((p) => `<option value="${esc(p.id)}" ${p.id === productId ? 'selected' : ''}>${esc(p.name)}</option>`))
+    .join('')
+  const hiddenInputs = Object.entries({ periodo: period, ...hidden })
+    .filter(([, v]) => v)
+    .map(([k, v]) => `<input type="hidden" name="${esc(k)}" value="${esc(v)}">`)
+    .join('')
+  return `<div class="filters"><div class="seg">${periods}</div>
+<form method="get" action="${base}" style="display:flex;gap:8px;flex-wrap:wrap">${hiddenInputs}
+<select name="produto" onchange="this.form.submit()" aria-label="Produto">${options}</select>${extra}</form></div>`
+}
+
+// ---------------------------------------------------------------- Visitantes
+
+export function visitorsPage(rows, { period, tz, currency, products, productId, source, live }) {
+  const srcOptions = [`<option value="">Todas as origens</option>`]
+    .concat(Object.entries(SOURCES).map(([k, v]) => `<option value="${k}" ${k === source ? 'selected' : ''}>${v}</option>`))
+    .join('')
+  const body = table(
+    [
+      { label: 'Quando', html: (r) => `${esc(when(r.created_at, tz))}<span class="sub2">${ago(r.created_at)}</span>` },
+      { label: 'Origem', html: (r) => originTag(r.source || 'direto') + (r.source === 'referencia' || r.source === 'organico' ? `<span class="sub2">${esc(referrerHost(r))}</span>` : '') },
+      { label: 'IP', html: (r) => `<code>${esc(r.ip || '—')}</code>` },
+      { label: 'Produto', html: (r) => esc(r.produto || '—') },
+      { label: 'Campanha / palavra-chave', html: (r) => (r.source === 'pago' ? `${esc(r.campanha)}<span class="sub2">${esc(r.palavra)}</span>` : '<span class="muted">—</span>') },
+      {
+        label: 'Aparelho',
+        html: (r) => {
+          const u = uaInfo(r.user_agent)
+          return `${esc(u.device)}${u.bot ? ' <span class="tag warn">robô</span>' : ''}<span class="sub2">${esc([u.os, u.browser].filter(Boolean).join(' · '))}</span>`
+        },
+      },
+      { label: 'Clicou p/ comprar', html: (r) => (r.outbound_at ? `<span class="tag ok">sim${r.outbound_count > 1 ? ` · ${r.outbound_count}x` : ''}</span>` : '<span class="muted">não</span>') },
+      { label: 'Comprou', html: (r) => (r.compras ? `<span class="tag ok">✓ ${money(r.valor, currency)}</span>` : '<span class="muted">—</span>') },
+    ],
+    rows,
+    'Nenhuma visita neste período.',
+  )
+  return layout(
+    'Visitantes — Tracking',
+    'visitantes',
+    `<div class="page-head"><div><h2 class="title">Visitantes</h2><p class="sub">Quem chegou nas suas páginas de review, de onde veio e o que fez.</p></div>
+${filterBar({
+  base: '/visitantes',
+  period,
+  products,
+  productId,
+  hidden: { origem: source || '', ao_vivo: live ? '1' : '' },
+  extra: `<select name="origem" onchange="this.form.submit()" aria-label="Origem">${srcOptions}</select>`,
+})}</div>
+<section><div class="toolbar"><b>${rows.length}${rows.length >= 200 ? '+' : ''} visita(s)</b>
+<span class="muted">· mais recentes primeiro</span>
+<label style="margin-left:auto;display:flex;gap:6px;align-items:center;cursor:pointer"><input type="checkbox" id="live" ${live ? 'checked' : ''}> Ao vivo ${live ? '<span class="livebadge"><i></i>atualizando</span>' : ''}</label></div>
+${body}</section>`,
+    `const lv=document.getElementById('live');lv.addEventListener('change',()=>{const u=new URL(location.href);
+if(lv.checked)u.searchParams.set('ao_vivo','1');else u.searchParams.delete('ao_vivo');location.href=u});
+if(lv.checked)setTimeout(()=>location.reload(),10000);`,
+  )
+}
+
+// ---------------------------------------------------------------- Vendas
+
+export function salesPage(rows, { period, tz, currency, products, productId, origin, tests }) {
+  const real = rows.filter((r) => r.status === 'approved')
+  const total = real.reduce((s, r) => s + r.amount, 0)
+  const semClique = real.filter((r) => r.origem === 'sem_clique').length
+  const pagas = real.filter((r) => r.origem === 'pago').length
+  const refunds = rows.filter((r) => r.status === 'refund').length
+  const orgOptions = [`<option value="">Todas as origens</option>`]
+    .concat(Object.entries(ORIGIN_LABELS).filter(([k]) => k !== 'teste').map(([k, v]) => `<option value="${k}" ${k === origin ? 'selected' : ''}>${v}</option>`))
+    .join('')
+  const kpi = (label, value, note = '', cls = '') =>
+    `<div class="kpi ${cls}"><span>${label}</span><b>${value}</b>${note ? `<small>${note}</small>` : ''}</div>`
+  const body = table(
+    [
+      { label: 'Quando', html: (r) => `${esc(when(r.created_at, tz))}<span class="sub2">${ago(r.created_at)}</span>` },
+      { label: 'Status', html: saleStatus },
+      { label: 'Produto', html: (r) => esc(r.produto || r.product || '—') },
+      { label: 'Origem', html: (r) => originTag(r.origem) },
+      { label: 'IP', html: (r) => (r.ip ? `<code>${esc(r.ip)}</code>` : '<span class="muted">—</span>') },
+      { label: 'Campanha / palavra-chave', html: (r) => (r.origem === 'pago' ? `${esc(r.campanha)}<span class="sub2">${esc(r.palavra)}</span>` : '<span class="muted">—</span>') },
+      { label: 'Pedido', html: (r) => `${esc(r.order_id || '—')}<span class="sub2">${esc(r.type)}</span>` },
+      {
+        label: 'Google Ads',
+        html: (r) =>
+          r.status !== 'approved'
+            ? '<span class="muted">não envia</span>'
+            : r.gclid
+              ? '<span class="tag ok" title="Tem gclid: entra na planilha que o Google Ads lê">na planilha</span>'
+              : '<span class="muted" title="Sem gclid: não dá para enviar ao Google Ads">sem gclid</span>',
+      },
+      { label: 'Comissão', n: 1, html: (r) => money(r.amount, currency) },
+      {
+        label: '',
+        html: (r) =>
+          `<form method="post" action="/vendas/${r.id}/excluir" data-confirm="Excluir esta venda? Ela sai dos números e da planilha do Google Ads. Não tem volta."><button type="submit" class="mini danger">Excluir</button></form>`,
+      },
+    ],
+    rows,
+    tests ? 'Nenhuma venda ou teste neste período.' : 'Nenhuma venda neste período.',
+  )
+  return layout(
+    'Vendas — Tracking',
+    'vendas',
+    `<div class="page-head"><div><h2 class="title">Vendas</h2><p class="sub">Só vendas reais. Testes ficam de fora${tests ? ' (mostrando testes agora)' : ''}.</p></div>
+${filterBar({
+  base: '/vendas',
+  period,
+  products,
+  productId,
+  hidden: { origem: origin || '', testes: tests ? '1' : '' },
+  extra: `<select name="origem" onchange="this.form.submit()" aria-label="Origem">${orgOptions}</select>`,
+})}</div>
+<div class="kpis">
+${kpi('Comissão', money(total, currency), `${real.length} venda(s)`, 'hero')}
+${kpi('Do Google Ads', pagas, `${pct(pagas, real.length)} das vendas`)}
+${kpi('Sem clique', semClique, 'venda sem visita registrada')}
+${kpi('Reembolsos', refunds)}
+</div>
+<section><div class="toolbar"><b>${rows.length} registro(s)</b>
+<a style="margin-left:auto" href="/vendas?${new URLSearchParams({ periodo: period, ...(productId ? { produto: productId } : {}), ...(origin ? { origem: origin } : {}), ...(tests ? {} : { testes: '1' }) })}">${tests ? 'Esconder testes' : 'Mostrar testes'}</a></div>
+${body}</section>
+<p class="muted">“Sem clique”: a venda chegou da BuyGoods sem um ID de visita do rastreador (o comprador não passou pela página com o script, ou o link não levou o subid). Essas vendas não vão para o Google Ads.</p>`,
   )
 }

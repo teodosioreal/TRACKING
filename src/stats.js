@@ -108,7 +108,7 @@ export function dashboard(db, period, tz, now = new Date(), productId = null) {
     .prepare(
       `SELECT v.*, c.gclid, p.name AS produto, ${CAMPAIGN} AS campanha, ${KEYWORD} AS palavra
          FROM conversions v LEFT JOIN clicks c ON c.id = v.subid LEFT JOIN products p ON p.id = c.product_id
-        WHERE v.created_at >= ? AND v.created_at < ? AND ${PRODUCT_FILTER}
+        WHERE v.status != 'test' AND v.created_at >= ? AND v.created_at < ? AND ${PRODUCT_FILTER}
         ORDER BY v.created_at DESC LIMIT 100`,
     )
     .all(from, to, pid, pid)
@@ -197,4 +197,73 @@ export function timeSeries(db, period, tz, now = new Date(), productId = null) {
     }
   }
   return { hourly, points: keys.map((k) => buckets.get(k)) }
+}
+
+// ---- Visitantes, vendas e origem ------------------------------------------
+
+const ORIGIN = `CASE WHEN c.id IS NULL THEN 'sem_clique' ELSE COALESCE(c.source, 'direto') END`
+
+// Visitas do período, mais recentes primeiro, com "clicou" e "comprou".
+export function visitors(db, { period, tz, productId = null, source = null, limit = 200, now = new Date() }) {
+  const [from, to] = periodRange(period, tz, now)
+  const pid = productId || null
+  const src = source || null
+  return db
+    .prepare(
+      `SELECT c.*, p.name AS produto, ${CAMPAIGN} AS campanha, ${KEYWORD} AS palavra,
+              (SELECT COUNT(*) FROM conversions v WHERE v.subid = c.id AND v.status = 'approved') AS compras,
+              (SELECT COALESCE(SUM(v.amount), 0) FROM conversions v WHERE v.subid = c.id AND v.status = 'approved') AS valor
+         FROM clicks c LEFT JOIN products p ON p.id = c.product_id
+        WHERE c.created_at >= ? AND c.created_at < ? AND ${PRODUCT_FILTER}
+          AND (? IS NULL OR COALESCE(c.source, 'direto') = ?)
+        ORDER BY c.created_at DESC LIMIT ?`,
+    )
+    .all(from, to, pid, pid, src, src, limit)
+}
+
+// Vendas do período. Por padrão só vendas reais (aprovadas e reembolsos);
+// testes só aparecem se pedir.
+export function salesList(db, { period, tz, productId = null, origin = null, includeTests = false, limit = 300, now = new Date() }) {
+  const [from, to] = periodRange(period, tz, now)
+  const pid = productId || null
+  const org = origin || null
+  return db
+    .prepare(
+      `SELECT v.*, c.gclid, c.ip, c.device, c.user_agent, p.name AS produto, ${ORIGIN} AS origem,
+              ${CAMPAIGN} AS campanha, ${KEYWORD} AS palavra
+         FROM conversions v LEFT JOIN clicks c ON c.id = v.subid LEFT JOIN products p ON p.id = c.product_id
+        WHERE v.created_at >= ? AND v.created_at < ? AND ${PRODUCT_FILTER}
+          AND (? = 1 OR v.status != 'test')
+          AND (? IS NULL OR ${ORIGIN} = ?)
+        ORDER BY v.created_at DESC, v.id DESC LIMIT ?`,
+    )
+    .all(from, to, pid, pid, includeTests ? 1 : 0, org, org, limit)
+}
+
+// Visitas e vendas por origem (pago, orgânico, direto, referência, sem clique).
+export function originBreakdown(db, period, tz, now = new Date(), productId = null) {
+  const [from, to] = periodRange(period, tz, now)
+  const pid = productId || null
+  const map = new Map()
+  const get = (k) => {
+    if (!map.has(k)) map.set(k, { origem: k, visitas: 0, vendas: 0, comissao: 0 })
+    return map.get(k)
+  }
+  for (const r of db
+    .prepare(
+      `SELECT COALESCE(c.source, 'direto') AS k, COUNT(*) AS n FROM clicks c
+        WHERE c.is_test = 0 AND c.created_at >= ? AND c.created_at < ? AND ${PRODUCT_FILTER} GROUP BY k`,
+    )
+    .all(from, to, pid, pid))
+    get(r.k).visitas = r.n
+  for (const r of db
+    .prepare(
+      `SELECT ${ORIGIN} AS k, COUNT(*) AS n, SUM(v.amount) AS s
+         FROM conversions v LEFT JOIN clicks c ON c.id = v.subid
+        WHERE v.status = 'approved' AND v.created_at >= ? AND v.created_at < ? AND ${PRODUCT_FILTER} GROUP BY k`,
+    )
+    .all(from, to, pid, pid))
+    Object.assign(get(r.k), { vendas: r.n, comissao: r.s || 0 })
+  const order = ['pago', 'pago_outro', 'organico', 'referencia', 'direto', 'sem_clique']
+  return [...map.values()].filter((r) => r.origem !== 'teste').sort((a, b) => order.indexOf(a.origem) - order.indexOf(b.origem))
 }

@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { openDb, getSetting, setSetting } from './src/db.js'
 import { recordClick, recordOutbound, recordPing, recordPostback, exportGoogleAdsCsv } from './src/tracking.js'
-import { dashboard, timeSeries, PERIODS } from './src/stats.js'
+import { dashboard, timeSeries, visitors, salesList, originBreakdown, PERIODS } from './src/stats.js'
 import { checkHttps } from './src/health.js'
 import {
   isValidPid,
@@ -27,7 +27,8 @@ import {
   recentPostbacks,
   lastPostbackEvent,
   lastPostbackSignal,
-  markConversionAsTest,
+  deleteConversion,
+  deleteProduct,
   MAX_IMAGE_BYTES,
 } from './src/products.js'
 import { checkPage } from './src/verify.js'
@@ -43,7 +44,11 @@ import {
   getHealth,
   TABS,
   PRODUCT_TABS,
+  visitorsPage,
+  salesPage,
+  ORIGIN_FILTERS,
 } from './src/views.js'
+import { SOURCES } from './src/source.js'
 import { readVersion } from './src/version.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -304,6 +309,7 @@ async function handleAdmin(req, res, url) {
         productId: product?.id || null,
         series: timeSeries(db, period, cfg.tz, now, product?.id),
         tab,
+        origins: originBreakdown(db, period, cfg.tz, now, product?.id),
       }),
     )
   }
@@ -320,6 +326,7 @@ async function handleAdmin(req, res, url) {
         currency: cfg.currency,
         archivedCount: listProducts(db, { archived: true }).length,
         showArchived,
+        flash: url.searchParams.get('ok') === 'excluido' ? 'Produto excluído.' : null,
       }),
     )
   }
@@ -427,6 +434,11 @@ async function handleAdmin(req, res, url) {
       return go('google', 'ok=conversao')
     }
 
+    if (action === 'excluir' && method === 'POST') {
+      deleteProduct(db, product.id)
+      return redirect(res, '/produtos?ok=excluido')
+    }
+
     if ((action === 'arquivar' || action === 'reativar') && method === 'POST') {
       setArchived(db, product.id, action === 'arquivar')
       return go('config', `ok=${action === 'arquivar' ? 'arquivado' : 'reativado'}`)
@@ -450,10 +462,53 @@ async function handleAdmin(req, res, url) {
     return send(res, 200, JSON.stringify(lastPostbackEvent(db)), 'application/json; charset=utf-8')
   }
 
-  const mt = path.match(/^\/postbacks\/(\d+)\/teste$/)
-  if (mt && method === 'POST') {
-    markConversionAsTest(db, Number(mt[1]))
-    const back = new URL(req.headers.referer || '/configuracoes', 'http://x')
+  // Período/produto comuns às páginas de listas.
+  const listFilters = () => ({
+    period: PERIODS[url.searchParams.get('periodo')] ? url.searchParams.get('periodo') : '7d',
+    product: getProduct(db, url.searchParams.get('produto')),
+  })
+
+  if (path === '/visitantes' && method === 'GET') {
+    const { period, product } = listFilters()
+    const source = SOURCES[url.searchParams.get('origem')] ? url.searchParams.get('origem') : null
+    const rows = visitors(db, { period, tz: cfg.tz, productId: product?.id, source })
+    return html(
+      res,
+      visitorsPage(rows, {
+        period,
+        tz: cfg.tz,
+        currency: cfg.currency,
+        products: listProducts(db),
+        productId: product?.id || null,
+        source,
+        live: url.searchParams.get('ao_vivo') === '1',
+      }),
+    )
+  }
+
+  if (path === '/vendas' && method === 'GET') {
+    const { period, product } = listFilters()
+    const origin = ORIGIN_FILTERS[url.searchParams.get('origem')] ? url.searchParams.get('origem') : null
+    const tests = url.searchParams.get('testes') === '1'
+    const rows = salesList(db, { period, tz: cfg.tz, productId: product?.id, origin, includeTests: tests })
+    return html(
+      res,
+      salesPage(rows, {
+        period,
+        tz: cfg.tz,
+        currency: cfg.currency,
+        products: listProducts(db),
+        productId: product?.id || null,
+        origin,
+        tests,
+      }),
+    )
+  }
+
+  const mv = path.match(/^\/vendas\/(\d+)\/excluir$/)
+  if (mv && method === 'POST') {
+    deleteConversion(db, Number(mv[1]))
+    const back = new URL(req.headers.referer || '/vendas', 'http://x')
     return redirect(res, back.pathname + back.search)
   }
 

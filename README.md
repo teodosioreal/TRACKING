@@ -68,6 +68,17 @@ systemctl enable --now tracking-update.timer tracking-backup.timer
 - **Backup:** todo dia às 04:00 grava uma cópia do banco em
   `dados/backups/` e guarda os últimos 14 dias.
 
+## Páginas
+
+- **Visão geral**: comissão, vendas, visitas, gráfico por hora/dia, origem das
+  visitas e resultados por campanha/palavra-chave.
+- **Visitantes**: cada visita com IP, origem (Pago, Orgânico, Referência,
+  Direto, Teste), produto, campanha/palavra-chave, aparelho, se clicou para
+  comprar e se comprou. Opção “Ao vivo” (atualiza a cada 10 s).
+- **Vendas**: só vendas reais (testes ficam ocultos), com origem (Pago,
+  Orgânico, Sem clique...), IP e botão Excluir.
+- **Produtos** e **Configurações**.
+
 ## Como usar
 
 Abra `https://tracking.odingdong.tech` (login do `.env`).

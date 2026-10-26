@@ -2,6 +2,7 @@
 // planilha do Google Ads. Sem HTTP aqui, para dar para testar isolado.
 
 import { isValidPid } from './products.js'
+import { classifySource } from './source.js'
 
 const CID_RE = /^[A-Za-z0-9_-]{6,64}$/
 
@@ -63,6 +64,7 @@ export function recordClick(db, { cid, pid, test, url, referrer, ip, userAgent }
   row.user_agent = clip(userAgent, 500)
   row.product_id = existingProduct(db, pid)
   row.is_test = test ? 1 : 0
+  row.source = classifySource(row)
 
   const cols = Object.keys(row)
   // Recarregar a página manda o mesmo cid de novo: mantém o primeiro registro.

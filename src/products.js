@@ -250,3 +250,25 @@ export function lastPostbackEvent(db) {
 export function markConversionAsTest(db, id) {
   return db.prepare(`UPDATE conversions SET status = 'test' WHERE id = ? AND status = 'approved'`).run(id).changes > 0
 }
+
+// Exclui o produto, a imagem, as visitas dele e as vendas ligadas a essas
+// visitas. Não tem volta.
+export function deleteProduct(db, id) {
+  db.exec('BEGIN')
+  try {
+    db.prepare('DELETE FROM conversions WHERE subid IN (SELECT id FROM clicks WHERE product_id = ?)').run(id)
+    db.prepare('DELETE FROM clicks WHERE product_id = ?').run(id)
+    db.prepare('DELETE FROM product_images WHERE product_id = ?').run(id)
+    db.prepare('DELETE FROM settings WHERE key = ?').run(`csv_fetch:${id}`)
+    db.prepare('DELETE FROM products WHERE id = ?').run(id)
+    db.exec('COMMIT')
+  } catch (err) {
+    db.exec('ROLLBACK')
+    throw err
+  }
+}
+
+// Exclui uma venda/postback (ex.: teste que entrou como venda).
+export function deleteConversion(db, id) {
+  return db.prepare('DELETE FROM conversions WHERE id = ?').run(id).changes > 0
+}

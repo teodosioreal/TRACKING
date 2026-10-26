@@ -1,6 +1,7 @@
 import { DatabaseSync } from 'node:sqlite'
 import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
+import { classifySource } from './source.js'
 
 export function openDb(path) {
   if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true })
@@ -86,6 +87,12 @@ export function openDb(path) {
   const cols = new Set(db.prepare('PRAGMA table_info(clicks)').all().map((c) => c.name))
   if (!cols.has('product_id')) db.exec('ALTER TABLE clicks ADD COLUMN product_id TEXT')
   if (!cols.has('is_test')) db.exec('ALTER TABLE clicks ADD COLUMN is_test INTEGER NOT NULL DEFAULT 0')
+  if (!cols.has('source')) {
+    // Origem da visita: calculada uma vez para as visitas antigas.
+    db.exec('ALTER TABLE clicks ADD COLUMN source TEXT')
+    const upd = db.prepare('UPDATE clicks SET source = ? WHERE id = ?')
+    for (const r of db.prepare('SELECT * FROM clicks').all()) upd.run(classifySource(r), r.id)
+  }
   db.exec('CREATE INDEX IF NOT EXISTS clicks_product ON clicks(product_id, created_at)')
   const pcols = new Set(db.prepare('PRAGMA table_info(products)').all().map((c) => c.name))
   if (!pcols.has('affiliate_url')) db.exec('ALTER TABLE products ADD COLUMN affiliate_url TEXT')
