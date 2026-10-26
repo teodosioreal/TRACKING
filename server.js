@@ -119,6 +119,8 @@ const FLASH = {
   teste: 'Venda de teste registrada e ligada a este produto. Ela não vai para o Google Ads.',
   'sem-visita': 'Ainda não há visita deste produto. Clique em "Testar instalação" (aba Script) primeiro e depois simule a venda.',
   'imagem-removida': 'Imagem removida.',
+  afiliado: 'Link de afiliado salvo. Em até 5 minutos as páginas passam a reconhecer esse botão; depois clique em Testar instalação.',
+  'afiliado-invalido': 'Link inválido.',
 }
 
 function safeEqual(a, b) {
@@ -270,7 +272,7 @@ async function handlePublic(req, res, url) {
   if (path === '/p' && method === 'POST') {
     try {
       const body = JSON.parse(await readBody(req))
-      recordPing(db, { pid: body.pid, url: body.url, links: body.links, test: body.test === true })
+      recordPing(db, { pid: body.pid, url: body.url, links: body.links, test: body.test === true, candidates: body.candidatos })
     } catch {}
     send(res, 204, '', 'text/plain', CORS)
     return true
@@ -532,6 +534,14 @@ async function handleAdmin(req, res, url) {
       const page = pages.includes(wanted) ? wanted : pages[0]
       const r = await checkPage({ ...product, review_url: page }, fetch, cfg.publicUrl.replace(/^https?:\/\//, ''))
       return send(res, 200, JSON.stringify({ html: r }), 'application/json; charset=utf-8')
+    }
+
+    // "Usar como link de afiliado": sugestão vinda da página onde o script não achou o botão.
+    if (action === 'afiliado' && method === 'POST') {
+      const link = String(new URLSearchParams(await readBody(req)).get('url') || '').trim()
+      if (!/^https?:\/\//.test(link)) return go('script', 'erro=afiliado-invalido')
+      db.prepare('UPDATE products SET affiliate_url = ? WHERE id = ?').run(link.slice(0, 2000), product.id)
+      return go('script', 'ok=afiliado')
     }
 
     if (action === 'conversao' && method === 'POST') {

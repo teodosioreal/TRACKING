@@ -678,7 +678,30 @@ ${
         [
           { label: 'Página', html: (r) => `<a href="${esc(r.page)}" target="_blank" rel="noopener">${esc(r.page.replace(/^https?:\/\//, ''))}</a>` },
           { label: 'Último sinal', html: (r) => `${ago(r.last_at)}<span class="sub2">${esc(when(r.last_at, tz))}</span>` },
-          { label: 'Links de afiliado', html: (r) => (r.links > 0 ? `<span class="tag ok">${r.links}</span>` : '<span class="tag bad">0 — não achou o botão</span>') },
+          {
+            label: 'Links de afiliado',
+            html: (r) => {
+              if (r.links > 0) return `<span class="tag ok">${r.links}</span>`
+              const cands = (() => {
+                try {
+                  return JSON.parse(r.candidates || '[]')
+                } catch {
+                  return []
+                }
+              })()
+              return `<span class="tag bad">0 — nenhum link reconhecido como de afiliado</span>${
+                cands.length
+                  ? `<div class="sub2" style="white-space:normal;margin-top:4px">Links externos que o script viu nessa página. Qual é o do botão de compra?</div>${cands
+                      .map(
+                        (c) => `<form method="post" action="/produtos/${pid}/afiliado" style="display:flex;gap:6px;align-items:center;margin-top:4px">
+<input type="hidden" name="url" value="${esc(c)}"><code style="white-space:normal;word-break:break-all">${esc(c.length > 90 ? c.slice(0, 90) + '…' : c)}</code>
+<button type="submit" class="mini">Usar como link de afiliado</button></form>`,
+                      )
+                      .join('')}`
+                  : '<div class="sub2" style="white-space:normal">O script não viu nenhum link externo. Se o botão abre a oferta por JavaScript, coloque <code>data-rastrear</code> nele com o link em <code>data-href</code>.</div>'
+              }`
+            },
+          },
         ],
         pings,
         '',

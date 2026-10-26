@@ -85,7 +85,7 @@ export function recordOutbound(db, cid, now = new Date()) {
 }
 
 // Sinal do script: ele está na página e achou N links de compra.
-export function recordPing(db, { pid, url, links, test }, now = new Date()) {
+export function recordPing(db, { pid, url, links, test, candidates }, now = new Date()) {
   if (!existingProduct(db, pid)) return false
   const n = Number.isInteger(links) && links >= 0 ? Math.min(links, 1000) : null
   db.prepare(
@@ -95,11 +95,15 @@ export function recordPing(db, { pid, url, links, test }, now = new Date()) {
   ).run(now.toISOString(), clip(url, 2000), n, test ? 1 : 0, now.toISOString(), pid)
   const page = pageKey(url)
   if (page) {
+    // Links externos que o script viu quando não reconheceu nenhum link de compra.
+    const cands = Array.isArray(candidates)
+      ? candidates.filter((c) => typeof c === 'string' && /^https?:\/\//.test(c)).slice(0, 8).map((c) => c.slice(0, 300))
+      : []
     db.prepare(
-      `INSERT INTO page_pings (product_id, page, url, last_at, links, test_at) VALUES (?, ?, ?, ?, ?, ?)
+      `INSERT INTO page_pings (product_id, page, url, last_at, links, test_at, candidates) VALUES (?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(product_id, page) DO UPDATE SET url = excluded.url, last_at = excluded.last_at,
-         links = excluded.links, test_at = COALESCE(excluded.test_at, page_pings.test_at)`,
-    ).run(pid, page, clip(url, 2000), now.toISOString(), n, test ? now.toISOString() : null)
+         links = excluded.links, test_at = COALESCE(excluded.test_at, page_pings.test_at), candidates = excluded.candidates`,
+    ).run(pid, page, clip(url, 2000), now.toISOString(), n, test ? now.toISOString() : null, cands.length ? JSON.stringify(cands) : null)
   }
   return true
 }

@@ -245,3 +245,13 @@ test('várias páginas por produto e sinal do script por página', async () => {
   const pings = Object.fromEntries(pagePings(db, id).map((r) => [r.page, r.links]))
   assert.deepEqual(pings, { 'https://a.com/r': 4, 'https://b.com/lista': 0 })
 })
+
+test('sinal sem link reconhecido guarda os links externos sugeridos', async () => {
+  const { pagePings } = await import('../src/products.js')
+  const db = openDb(':memory:')
+  const id = createProduct(db, parseProductForm(form({ name: 'Arialief', conversion_name: 'C' })).values)
+  recordPing(db, { pid: id, url: 'https://r.com/a', links: 0, candidates: ['https://arialief.com/x', 'javascript:alert(1)', 42] })
+  assert.deepEqual(JSON.parse(pagePings(db, id)[0].candidates), ['https://arialief.com/x'])
+  recordPing(db, { pid: id, url: 'https://r.com/a', links: 2, candidates: [] })
+  assert.equal(pagePings(db, id)[0].candidates, null)
+})

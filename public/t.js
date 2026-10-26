@@ -64,55 +64,149 @@
 
   post('/c', { cid: cid, pid: PID, test: isTest, url: location.href, ref: document.referrer })
 
-  function isTracked(a) {
-    if (a.hasAttribute('data-rastrear')) return true
-    var host = (a.hostname || '').toLowerCase()
-    for (var i = 0; i < domains.length; i++) if (domains[i] && host.indexOf(domains[i]) !== -1) return true
-    return /[?&]aff_id=/i.test(a.href)
-  }
-
-  var OUR_ID = /^v[a-z0-9]{8,}$/
-
-  function tag(a) {
-    if (!a.href || !isTracked(a)) return false
+  // É link de compra? (domínio do link de afiliado do produto, buygoods,
+  // data-dominios ou parâmetro aff_id da BuyGoods)
+  function isTrackedUrl(href) {
     try {
-      var u = new URL(a.href)
-      var old = u.searchParams.get(param)
-      if (old !== cid) {
-        // Um subid fixo que já estava no link (ex.: "adsgoogle") vai para o subid2.
-        if (param === 'subid' && old && !OUR_ID.test(old) && !u.searchParams.get('subid2')) u.searchParams.set('subid2', old)
-        u.searchParams.set(param, cid)
-        a.href = u.toString()
-      }
-      return true
+      var u = new URL(href, location.href)
+      if (!/^https?:$/.test(u.protocol)) return false
+      var host = u.hostname.toLowerCase()
+      for (var i = 0; i < domains.length; i++) if (domains[i] && host.indexOf(domains[i]) !== -1) return true
+      return /[?&]aff_id=/i.test(u.search)
     } catch (e) {
       return false
     }
   }
 
+  var OUR_ID = /^v[a-z0-9]{8,}$/
+
+  // Mesmo endereço, com o ID da visita no parâmetro do produto.
+  function tagUrl(href) {
+    try {
+      var u = new URL(href, location.href)
+      var old = u.searchParams.get(param)
+      if (old === cid) return u.toString()
+      // Um subid fixo que já estava no link (ex.: "adsgoogle") vai para o subid2.
+      if (param === 'subid' && old && !OUR_ID.test(old) && !u.searchParams.get('subid2')) u.searchParams.set('subid2', old)
+      u.searchParams.set(param, cid)
+      return u.toString()
+    } catch (e) {
+      return null
+    }
+  }
+
+  function tag(a) {
+    if (!a.href || !(a.hasAttribute('data-rastrear') || isTrackedUrl(a.href))) return false
+    var t = tagUrl(a.href)
+    if (!t) return false
+    if (t !== a.href) a.href = t
+    return true
+  }
+
+  // Botões que não são <a href>: data-href/data-url/data-link ou um endereço
+  // dentro do onclick (ex.: onclick="location.href='https://...'").
+  var BUTTONS = 'button,[onclick],[data-href],[data-url],[data-link]'
+  function urlOf(el) {
+    var d = el.getAttribute('data-href') || el.getAttribute('data-url') || el.getAttribute('data-link')
+    if (d) return d
+    var m = /https?:\/\/[^'"\s)]+/.exec(el.getAttribute('onclick') || '')
+    return m ? m[0] : null
+  }
+  function trackedButton(el) {
+    var u = urlOf(el)
+    return u && (el.hasAttribute('data-rastrear') || isTrackedUrl(u)) ? u : null
+  }
+
   function tagAll() {
-    var links = document.querySelectorAll('a[href]')
     var n = 0
+    var links = document.querySelectorAll('a[href]')
     for (var i = 0; i < links.length; i++) if (tag(links[i])) n++
+    var forms = document.querySelectorAll('form[action]')
+    for (var j = 0; j < forms.length; j++) {
+      var f = forms[j]
+      if (f.hasAttribute('data-rastrear') || isTrackedUrl(f.action)) {
+        var t = tagUrl(f.action)
+        if (t) {
+          f.action = t
+          // GET descarta os parâmetros do action: leva o ID num campo escondido.
+          if ((f.method || 'get').toLowerCase() === 'get') {
+            var inp = f.querySelector('input[name="' + param + '"]') || f.appendChild(document.createElement('input'))
+            inp.type = 'hidden'
+            inp.name = param
+            inp.value = cid
+          }
+          n++
+        }
+      }
+    }
+    var buttons = document.querySelectorAll(BUTTONS)
+    for (var k = 0; k < buttons.length; k++) if (!buttons[k].closest('a[href]') && trackedButton(buttons[k])) n++
     return n
   }
 
-  // Clique no botão de compra: garante o subid e avisa o rastreador.
+  // Quando nada foi reconhecido: links externos da página, para o painel
+  // sugerir qual é o link de afiliado.
+  var IGNORE = /(^|\.)(facebook|fb|instagram|twitter|x|youtube|youtu|google|pinterest|tiktok|linkedin|wa|whatsapp|t)\.(com|me|be)$/
+  function candidates() {
+    var seen = {}
+    var out = []
+    var els = document.querySelectorAll('a[href],' + BUTTONS)
+    for (var i = 0; i < els.length && out.length < 8; i++) {
+      var href = els[i].tagName === 'A' ? els[i].href : urlOf(els[i])
+      try {
+        var u = new URL(href, location.href)
+        if (!/^https?:$/.test(u.protocol) || u.hostname === location.hostname) continue
+        if (IGNORE.test(u.hostname.replace(/^www\./, ''))) continue
+        var key = u.origin + u.pathname
+        if (!seen[key]) {
+          seen[key] = 1
+          out.push(u.toString().slice(0, 300))
+        }
+      } catch (e) {}
+    }
+    return out
+  }
+
+  // Clique no botão de compra: garante o ID e avisa o rastreador.
   document.addEventListener(
     'click',
     function (e) {
-      var a = e.target && e.target.closest ? e.target.closest('a[href]') : null
-      if (a && tag(a) && navigator.sendBeacon) navigator.sendBeacon(BASE + '/o', cid)
+      if (!e.target || !e.target.closest) return
+      var a = e.target.closest('a[href]')
+      if (a) {
+        if (tag(a) && navigator.sendBeacon) navigator.sendBeacon(BASE + '/o', cid)
+        return
+      }
+      var el = e.target.closest(BUTTONS)
+      var u = el && trackedButton(el)
+      if (!u) return
+      var t = tagUrl(u)
+      if (!t) return
+      e.preventDefault()
+      e.stopImmediatePropagation()
+      if (navigator.sendBeacon) navigator.sendBeacon(BASE + '/o', cid)
+      if (el.getAttribute('target') === '_blank' || /window\.open/.test(el.getAttribute('onclick') || '')) window.open(t, '_blank')
+      else location.href = t
     },
     true,
   )
 
+  function ping(n) {
+    if (!PID) return
+    post('/p', { pid: PID, cid: cid, test: isTest, url: location.href, links: n, candidatos: n ? [] : candidates() })
+  }
+
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', tagAll)
   else tagAll()
-  // Páginas que montam os links depois (ex.: editores visuais). Depois disso,
-  // avisa o painel que o script está instalado e quantos links de compra achou.
+  // Páginas que montam os links depois (ex.: editores visuais): conta de novo
+  // e avisa o painel; se a contagem mudar mais tarde, avisa de novo.
+  var last = -1
+  setTimeout(function () {
+    last = tagAll()
+    ping(last)
+  }, 1500)
   setTimeout(function () {
     var n = tagAll()
-    if (PID) post('/p', { pid: PID, cid: cid, test: isTest, url: location.href, links: n })
-  }, 1500)
+    if (n !== last) ping(n)
+  }, 6000)
 })()

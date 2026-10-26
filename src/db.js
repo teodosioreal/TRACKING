@@ -110,6 +110,8 @@ export function openDb(path) {
   if (!pcols.has('affiliate_url')) db.exec('ALTER TABLE products ADD COLUMN affiliate_url TEXT')
   if (!pcols.has('tracking_param')) db.exec('ALTER TABLE products ADD COLUMN tracking_param TEXT')
   if (!pcols.has('extra_urls')) db.exec('ALTER TABLE products ADD COLUMN extra_urls TEXT')
+  const ppcols = new Set(db.prepare('PRAGMA table_info(page_pings)').all().map((c) => c.name))
+  if (!ppcols.has('candidates')) db.exec('ALTER TABLE page_pings ADD COLUMN candidates TEXT')
 
   // Uma vez: testes da BuyGoods gravados como venda antes da regra "comissão 0
   // sem ID da visita = teste" passam a ser teste.
