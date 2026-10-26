@@ -14,6 +14,13 @@ function newPid() {
   return 'p' + [...randomBytes(8)].map((b) => alphabet[b % alphabet.length]).join('')
 }
 
+// Nome da ação de conversão do Google Ads. Devolve a mensagem de erro ou null.
+export function conversionNameError(name) {
+  if (!name) return 'Informe o nome da conversão do Google Ads.'
+  if (name.length > 100) return 'Nome muito longo.'
+  return null
+}
+
 // Valida o formulário. Devolve { values } ou { errors }.
 export function parseProductForm(form) {
   const name = String(form.get('name') || '').trim()
@@ -25,8 +32,7 @@ export function parseProductForm(form) {
   if (!name) errors.name = 'Dê um nome para o produto.'
   else if (name.length > 100) errors.name = 'Nome muito longo.'
   if (!PLATFORMS[platform]) errors.platform = 'Plataforma inválida.'
-  if (!conversionName) errors.conversion_name = 'Informe o nome da conversão do Google Ads.'
-  else if (conversionName.length > 100) errors.conversion_name = 'Nome muito longo.'
+  if (conversionNameError(conversionName)) errors.conversion_name = conversionNameError(conversionName)
   if (reviewUrl) {
     try {
       const u = new URL(reviewUrl)
@@ -55,6 +61,10 @@ export function updateProduct(db, id, values) {
     values.review_url,
     id,
   )
+}
+
+export function setConversionName(db, id, name) {
+  db.prepare('UPDATE products SET conversion_name = ? WHERE id = ?').run(name, id)
 }
 
 export function setArchived(db, id, archived) {

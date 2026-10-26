@@ -136,3 +136,15 @@ test('verificação da página acha o script e os links', async () => {
   assert.match(await checkPage(product, page('', 404)), /erro 404/)
   assert.match(await checkPage({ id: 'pabc12345' }), /Informe o endereço/)
 })
+
+test('trocar o nome da conversão muda a planilha do produto', async () => {
+  const { setConversionName, conversionNameError } = await import('../src/products.js')
+  const { db, a } = withProducts()
+  recordClick(db, { cid: 'visitaA1', pid: a, url: 'https://s.com/?gclid=GA' })
+  recordPostback(db, form({ subid: 'visitaA1', order: '1', amount: '10' }))
+  setConversionName(db, a, 'Venda Sugar - Search')
+  assert.match(exportGoogleAdsCsv(db, { ...opts, productId: a }), /GA,Venda Sugar - Search,/)
+  assert.ok(conversionNameError(''))
+  assert.ok(conversionNameError('x'.repeat(101)))
+  assert.equal(conversionNameError('Compra'), null)
+})

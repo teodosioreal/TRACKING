@@ -12,6 +12,8 @@ import {
   createProduct,
   updateProduct,
   setArchived,
+  setConversionName,
+  conversionNameError,
   getProduct,
   listProducts,
   productStatus,
@@ -50,9 +52,15 @@ if (!cfg.adminPassword || !cfg.secretKey) {
 const db = openDb(cfg.dbPath)
 const trackerJs = readFileSync(join(here, 'public', 't.js'), 'utf8')
 
+// Nome usado nas vendas cujas visitas não têm produto. Editável em Configurações;
+// o CONVERSION_NAME do .env é só o valor inicial.
+const defaultConversion = () => getSetting(db, 'default_conversion_name') || cfg.conversionName
+
 const FLASH = {
   criado: 'Produto cadastrado. Agora copie o script do passo 1 e cole na página de review.',
   salvo: 'Alterações salvas.',
+  conversao: 'Nome da conversão salvo. Use exatamente este nome no Google Ads.',
+  'conversao-invalida': 'Nome da conversão inválido: não pode ficar vazio nem passar de 100 caracteres.',
   arquivado: 'Produto arquivado.',
   reativado: 'Produto reativado.',
   teste: 'Venda de teste registrada e ligada a este produto. Ela não vai para o Google Ads.',
@@ -203,7 +211,7 @@ async function handlePublic(req, res, url) {
       return true
     }
     const csv = exportGoogleAdsCsv(db, {
-      conversionName: cfg.conversionName,
+      conversionName: defaultConversion(),
       currency: cfg.currency,
       days: cfg.exportDays,
       productId: pid || null,
@@ -311,6 +319,13 @@ async function handleAdmin(req, res, url) {
       return send(res, 200, JSON.stringify({ html: r }), 'application/json; charset=utf-8')
     }
 
+    if (action === 'conversao' && method === 'POST') {
+      const name = String(new URLSearchParams(await readBody(req)).get('conversion_name') || '').trim()
+      if (conversionNameError(name)) return redirect(res, `/produtos/${product.id}?erro=conversao-invalida#google-ads`)
+      setConversionName(db, product.id, name)
+      return redirect(res, `/produtos/${product.id}?ok=conversao#google-ads`)
+    }
+
     if ((action === 'arquivar' || action === 'reativar') && method === 'POST') {
       setArchived(db, product.id, action === 'arquivar')
       return redirect(res, `/produtos/${product.id}?ok=${action === 'arquivar' ? 'arquivado' : 'reativado'}`)
@@ -329,6 +344,13 @@ async function handleAdmin(req, res, url) {
     }
   }
 
+  if (path === '/configuracoes' && method === 'POST') {
+    const name = String(new URLSearchParams(await readBody(req)).get('conversion_name') || '').trim()
+    if (conversionNameError(name)) return redirect(res, '/configuracoes?erro=1')
+    setSetting(db, 'default_conversion_name', name)
+    return redirect(res, '/configuracoes?ok=1')
+  }
+
   if (path === '/configuracoes' && method === 'GET') {
     const lastPostback = db
       .prepare(`SELECT created_at FROM conversions WHERE status != 'test' ORDER BY created_at DESC LIMIT 1`)
@@ -338,10 +360,15 @@ async function handleAdmin(req, res, url) {
       settingsPage({
         base: baseUrl(req),
         key: cfg.secretKey,
-        conversionName: cfg.conversionName,
+        conversionName: defaultConversion(),
         currency: cfg.currency,
         days: cfg.exportDays,
         lastPostback,
+        flash: url.searchParams.has('ok')
+          ? { text: 'Nome padrão salvo.' }
+          : url.searchParams.has('erro')
+            ? { text: 'Nome inválido: não pode ficar vazio nem passar de 100 caracteres.', bad: true }
+            : null,
         csvFetch: getSetting(db, 'csv_fetch:all'),
         tz: cfg.tz,
       }),

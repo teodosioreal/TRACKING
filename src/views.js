@@ -58,14 +58,17 @@ button,.btn{font:inherit;display:inline-block;padding:8px 14px;border-radius:8px
 .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px;text-decoration:none;color:var(--text);display:block}
 .card:hover{border-color:var(--accent)}.card h4{margin:0 0 2px;font-size:15px}.card .stats{display:flex;gap:16px;margin-top:10px;font-size:13px}
 .flash{padding:10px 14px;border-radius:8px;margin-bottom:16px;background:var(--okbg);color:var(--ok);border:1px solid var(--line)}
+.conv{margin-bottom:16px}.conv .row{display:flex;gap:8px;margin-top:4px}.conv .row input{flex:1;min-width:0}.conv .hint{color:var(--muted);font-size:12.5px;margin-top:6px}
 .flash.bad{background:var(--badbg);color:var(--bad)}
 #verify-result{margin-top:4px}
-@media (max-width:600px){header{padding:12px 16px}nav a{margin-left:12px}.code{flex-direction:column}.code button{align-self:flex-end}}
+@media (max-width:600px){.conv .row{flex-wrap:wrap}.conv .row input{flex-basis:100%}header{padding:12px 16px}nav a{margin-left:12px}.code{flex-direction:column}.code button{align-self:flex-end}}
 `
 
 const SCRIPT = `
 document.addEventListener('click',e=>{const b=e.target.closest('[data-copy]');if(!b)return;
 navigator.clipboard.writeText(document.getElementById(b.dataset.copy).textContent);const t=b.textContent;b.textContent='Copiado ✓';setTimeout(()=>b.textContent=t,1400)})
+document.addEventListener('click',e=>{const b=e.target.closest('[data-copy-input]');if(!b)return;
+navigator.clipboard.writeText(document.getElementById(b.dataset.copyInput).value.trim());const t=b.textContent;b.textContent='Copiado ✓';setTimeout(()=>b.textContent=t,1400)})
 document.addEventListener('submit',e=>{const m=e.target.dataset.confirm;if(m&&!confirm(m))e.preventDefault()})
 `
 
@@ -358,10 +361,16 @@ ${copy('postback', postback)}
 ${st.lastSale && st.lastSale.status === 'test' ? `<p class="ok">✓ Venda de teste ligada a este produto ${ago(st.lastSale.created_at)}.</p>` : ''}
 </div></section>
 
-<section><h3><span class="num">3</span> Google Ads</h3><div class="box">
+<section id="google-ads"><h3><span class="num">3</span> Google Ads</h3><div class="box">
+<form class="conv" method="post" action="/produtos/${esc(product.id)}/conversao">
+<label for="conv-input"><b>Nome da conversão</b></label>
+<div class="row"><input type="text" id="conv-input" name="conversion_name" value="${esc(product.conversion_name)}" required maxlength="100">
+<button type="submit">Salvar nome</button><button type="button" data-copy-input="conv-input">Copiar nome</button></div>
+<div class="hint">As vendas deste produto vão para o Google Ads com este nome. Tem que ser <b>idêntico</b> ao nome da ação de conversão lá (maiúsculas, espaços e acentos contam).</div>
+${st.lastRealSale ? `<div class="hint warn">Atenção: este produto já tem vendas. Se o Google Ads já importou vendas com o nome atual, trocar o nome faz ele importar de novo as vendas dos últimos dias na conversão nova (contagem em dobro). Troque só para corrigir um nome que ainda não existe no Google Ads.</div>` : ''}
+</form>
 <ol>
-<li>Em <b>Metas → Conversões → Resumo → + Nova ação de conversão → Importar → Arquivo/programação → Conversões de cliques</b>, crie a ação com este nome exato:
-${copy('convname', product.conversion_name, 'Copiar nome')}
+<li>Em <b>Metas → Conversões → Resumo → + Nova ação de conversão → Importar → Arquivo/programação → Conversões de cliques</b>, crie a ação com o nome acima.
 Categoria <b>Compra</b>, valor <b>"Usar valores diferentes para cada conversão"</b>, contagem <b>Todas</b> (para contar upsells).</li>
 <li>Em <b>Metas → Conversões → Uploads → Programações → +</b>, escolha a fonte <b>HTTPS</b>, cole o link abaixo e escolha a frequência <b>a cada 6 horas</b>:
 ${copy('csv', csv, 'Copiar link')}</li>
@@ -388,13 +397,13 @@ try{const r=await(await fetch('/produtos/'+pid+'/verificar')).json();out.innerHT
 
 // ---------------------------------------------------------------- Configurações
 
-export function settingsPage({ base, key, conversionName, currency, days, lastPostback, csvFetch, tz }) {
+export function settingsPage({ base, key, conversionName, currency, days, lastPostback, csvFetch, tz, flash }) {
   const postback = `${base}/postback?key=${key}&subid={SUBID}&order={ORDERID}&amount={COMMISSION_AMOUNT}&type={CONV_TYPE}&product={PRODUCT_CODENAME}`
   const csv = `${base}/google-ads.csv?key=${key}`
   return layout(
     'Configurações — Tracking',
     'config',
-    `<h2 class="title">Configurações gerais</h2>
+    `${flash ? `<div class="flash ${flash.bad ? 'bad' : ''}">${esc(flash.text)}</div>` : ''}<h2 class="title">Configurações gerais</h2>
 <p class="sub">O que vale para todos os produtos. A configuração de cada produto fica na página dele.</p>
 
 <section><h3>BuyGoods — postback (um só para todos os produtos)</h3><div class="box">
@@ -406,7 +415,14 @@ ${copy('postback', postback)}
 <p>Se todos os produtos rodam na <b>mesma conta</b> do Google Ads, você pode usar uma programação só com este link (cada venda vai com o nome de conversão do seu produto). Se cada produto roda numa conta diferente, use o link da página de cada produto.</p>
 ${copy('csv', csv)}
 <p>${csvFetch ? `<span class="ok">✓ Lida pela última vez ${ago(csvFetch.at)}.</span>` : '<span class="muted">Ainda não foi lida pelo Google Ads.</span>'}</p>
-<p class="muted">Vendas aprovadas dos últimos ${days} dias, com gclid, em ${esc(currency)}. Vendas de visitas sem produto usam o nome <b>${esc(conversionName)}</b>. O Google ignora vendas que já importou.</p>
+<p class="muted">Vendas aprovadas dos últimos ${days} dias, com gclid, em ${esc(currency)}. O Google ignora vendas que já importou.</p>
+</div></section>
+
+<section><h3>Nome padrão da conversão</h3><div class="box">
+<p class="muted">Cada produto usa o nome de conversão definido na página dele. Este nome só vale para vendas de visitas <b>sem produto</b> (páginas com o script antigo, sem <code>?p=</code>).</p>
+<form class="conv" method="post" action="/configuracoes">
+<div class="row"><input type="text" name="conversion_name" value="${esc(conversionName)}" required maxlength="100"><button type="submit">Salvar</button></div>
+</form>
 </div></section>`,
   )
 }
