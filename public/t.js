@@ -1,5 +1,5 @@
 // Script da página de review. Uso:
-//   <script src="https://tracking.seudominio.com/t.js" async></script>
+//   <script src="https://tracking.odingdong.tech/t.js" async></script>
 // Opcional no <script>: data-dominios="buygoods.com,outro.com" e data-param="subid".
 ;(function () {
   var BASE = '__BASE__'

@@ -21,7 +21,7 @@ Requer **Node 22.13 ou mais novo**.
 ## Rodar na VPS (junto com o CRM, mas separado)
 
 O rastreador roda na mesma VPS do CRM, num subdomínio próprio
-(`tracking.seudominio.com`), com pasta, serviço e porta (3100) só dele.
+(`tracking.odingdong.tech`), com pasta, serviço e porta (3100) só dele.
 Não toca em nada do CRM.
 
 **DNS:** crie um registro **A** `tracking` apontando para o IP da VPS.
@@ -51,7 +51,7 @@ ocupar as portas 80/443):
   existente e rode `sudo systemctl reload caddy`.
 - Se a porta 3100 já estiver em uso, troque `PORT` no `.env` e no proxy.
 
-Teste: `https://tracking.seudominio.com/saude` deve responder `ok`.
+Teste: `https://tracking.odingdong.tech/saude` deve responder `ok`.
 
 Atualizar depois: `cd /opt/tracking && sudo git pull && sudo systemctl restart tracking`.
 
@@ -59,7 +59,7 @@ Atualizar depois: `cd /opt/tracking && sudo git pull && sudo systemctl restart t
 
 ## Configurar
 
-Abra `https://SEU-SUBDOMINIO/configurar` (login do `.env`). A página mostra
+Abra `https://tracking.odingdong.tech/configurar` (login do `.env`). A página mostra
 tudo pronto para copiar:
 
 1. **Script da página de review** — `<script src=".../t.js" async></script>`.
