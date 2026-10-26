@@ -1,38 +1,62 @@
-// "Verificar o código da página": baixa o HTML da página de review e procura
-// o script do produto e os links da BuyGoods. Devolve um trecho de HTML.
+// "Verificar o código da página": baixa o HTML da página de review como um
+// visitante e diz o que encontrou. Devolve um trecho de HTML para o painel.
 import { esc } from './views.js'
 
-export async function checkPage(product, fetchImpl = fetch) {
+const UA =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36'
+
+export async function checkPage(product, fetchImpl = fetch, trackerHost = '') {
   if (!product.review_url) return '<span class="warn">Informe o endereço da página em Editar.</span>'
+  let res
   let body
   try {
-    const res = await fetchImpl(product.review_url, {
+    res = await fetchImpl(product.review_url, {
       redirect: 'follow',
-      signal: AbortSignal.timeout(10000),
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; TrackingCheck/1.0)' },
+      signal: AbortSignal.timeout(12000),
+      headers: { 'User-Agent': UA, 'Accept-Language': 'en-US,en;q=0.9' },
     })
-    if (!res.ok) return `<span class="bad">A página respondeu com erro ${res.status}.</span>`
     body = (await res.text()).slice(0, 3_000_000)
   } catch (err) {
-    return `<span class="bad">Não consegui abrir a página (${esc(err.name === 'TimeoutError' ? 'demorou demais' : err.message)}).</span>`
+    return `<span class="bad">✗ Não consegui abrir a página (${esc(err.name === 'TimeoutError' ? 'demorou demais' : err.cause?.code || err.message)}).</span>`
   }
 
+  const finalUrl = res.url || product.review_url
+  const title = (body.match(/<title[^>]*>([^<]{0,150})/i) || [])[1]?.trim() || '(sem título)'
+  const kb = Math.round(body.length / 1024)
   const hasScript = body.includes(`t.js?p=${product.id}`)
+  const escaped = /&lt;script[^&]*t\.js\?p=/i.test(body)
   const otherScript = !hasScript && /t\.js\?p=p[a-z0-9]{8}/.test(body)
+  const oldScript = !hasScript && trackerHost && body.includes(`${trackerHost}/t.js"`)
   const links = (body.match(/href\s*=\s*["'][^"']*buygoods[^"']*["']/gi) || []).length
+  const challenge = /cf-browser-verification|challenge-platform|just a moment\.\.\.|captcha/i.test(body)
 
-  const lines = []
-  if (hasScript) lines.push('<span class="ok">✓ Script deste produto encontrado no código da página.</span>')
+  const lines = [
+    `<span class="muted">O servidor abriu <b>${esc(finalUrl)}</b> · resposta ${res.status} · ${kb} KB · título: “${esc(title)}”</span>`,
+  ]
+  if (!res.ok) lines.push(`<span class="bad">✗ A página respondeu com erro ${res.status}.</span>`)
+  if (challenge)
+    lines.push(
+      '<span class="warn">! A página mostrou uma verificação anti-robô (Cloudflare/captcha) para o servidor. Este teste não enxerga a página de verdade; use o Testar instalação.</span>',
+    )
+
+  if (escaped)
+    lines.push(
+      '<span class="bad">✗ O script está na página como TEXTO, não como código. O editor transformou o código em texto. Cole num bloco/campo de “HTML” ou “código personalizado”, não num bloco de texto.</span>',
+    )
+  else if (hasScript) lines.push('<span class="ok">✓ Script deste produto encontrado no código da página.</span>')
   else if (otherScript)
     lines.push('<span class="bad">✗ A página tem o script de OUTRO produto. Troque pelo script desta página.</span>')
+  else if (oldScript)
+    lines.push('<span class="bad">✗ A página tem o script antigo (sem ?p=). Troque pelo script desta página.</span>')
   else
     lines.push(
-      '<span class="bad">✗ Script não encontrado no código da página.</span> <span class="muted">Se a página é montada por JavaScript (alguns editores), use o botão Testar instalação: ele é o teste que vale.</span>',
+      `<span class="bad">✗ O script não está no código que o servidor recebeu.</span> <span class="muted">Causas comuns: a página não foi publicada/atualizada depois de colar; cache do site (limpe o cache do WordPress/LiteSpeed/Cloudflare); o endereço cadastrado não é a página onde você colou; ou a página usa cloaker/proteção e mostra outra versão para robôs. Se a página é montada por JavaScript, vale o resultado do Testar instalação.</span>`,
     )
+
   lines.push(
     links
       ? `<span class="ok">✓ ${links} link(s) da BuyGoods no código.</span>`
-      : '<span class="warn">Nenhum link da BuyGoods no código da página.</span> <span class="muted">Se o botão usa link encurtado, coloque <code>data-rastrear</code> nele.</span>',
+      : '<span class="warn">! Nenhum link da BuyGoods no código.</span> <span class="muted">Se o botão usa link encurtado ou de outro domínio, coloque <code>data-rastrear</code> nele. Se a página é montada por JavaScript, vale o Testar instalação.</span>',
   )
   return lines.join('<br>')
 }

@@ -136,3 +136,65 @@ export function dashboard(db, period, tz, now = new Date(), productId = null) {
     recentClicks,
   }
 }
+
+function localKey(iso, tz, hourly) {
+  const p = Object.fromEntries(
+    new Intl.DateTimeFormat('en-CA', {
+      timeZone: tz,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      hourCycle: 'h23',
+    })
+      .formatToParts(new Date(iso))
+      .map((x) => [x.type, x.value]),
+  )
+  return hourly ? `${p.year}-${p.month}-${p.day} ${p.hour}` : `${p.year}-${p.month}-${p.day}`
+}
+
+// Visitas, vendas e comissão por hora (hoje/ontem) ou por dia (demais períodos).
+export function timeSeries(db, period, tz, now = new Date(), productId = null) {
+  const pid = productId || null
+  const hourly = period === 'hoje' || period === 'ontem'
+  let [from, to] = periodRange(period, tz, now)
+  if (period === 'tudo') {
+    const first = db
+      .prepare(`SELECT MIN(created_at) AS t FROM (SELECT created_at FROM clicks UNION ALL SELECT created_at FROM conversions)`)
+      .get().t
+    from = startOfDay(tz, 0, first ? new Date(first) : now)
+  }
+  const step = hourly ? 3600e3 : 86400e3
+  const end = hourly ? new Date(from).getTime() + 24 * 3600e3 : Math.min(new Date(to).getTime(), now.getTime())
+
+  const buckets = new Map()
+  for (let t = new Date(from).getTime(); t < end; t += step) {
+    const iso = new Date(t).toISOString()
+    const key = localKey(iso, tz, hourly)
+    if (!buckets.has(key)) buckets.set(key, { key, start: iso, visitas: 0, vendas: 0, comissao: 0 })
+  }
+  // Período longo: mostra só os últimos 90 dias no gráfico.
+  const keys = [...buckets.keys()].slice(-90)
+
+  const clicks = db
+    .prepare(`SELECT c.created_at FROM clicks c WHERE c.is_test = 0 AND c.created_at >= ? AND c.created_at < ? AND ${PRODUCT_FILTER}`)
+    .all(from, to, pid, pid)
+  const sales = db
+    .prepare(
+      `SELECT v.created_at, v.amount FROM conversions v LEFT JOIN clicks c ON c.id = v.subid
+        WHERE v.status = 'approved' AND v.created_at >= ? AND v.created_at < ? AND ${PRODUCT_FILTER}`,
+    )
+    .all(from, to, pid, pid)
+  for (const r of clicks) {
+    const b = buckets.get(localKey(r.created_at, tz, hourly))
+    if (b) b.visitas++
+  }
+  for (const r of sales) {
+    const b = buckets.get(localKey(r.created_at, tz, hourly))
+    if (b) {
+      b.vendas++
+      b.comissao += r.amount
+    }
+  }
+  return { hourly, points: keys.map((k) => buckets.get(k)) }
+}

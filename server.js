@@ -5,7 +5,8 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { openDb, getSetting, setSetting } from './src/db.js'
 import { recordClick, recordOutbound, recordPing, recordPostback, exportGoogleAdsCsv } from './src/tracking.js'
-import { dashboard, PERIODS } from './src/stats.js'
+import { dashboard, timeSeries, PERIODS } from './src/stats.js'
+import { checkHttps } from './src/health.js'
 import {
   isValidPid,
   parseProductForm,
@@ -27,6 +28,9 @@ import {
   checklistHtml,
   settingsPage,
   setAppInfo,
+  setHealth,
+  getHealth,
+  TABS,
 } from './src/views.js'
 import { readVersion } from './src/version.js'
 
@@ -53,7 +57,21 @@ if (!cfg.adminPassword || !cfg.secretKey) {
 
 const db = openDb(cfg.dbPath)
 const version = readVersion(here)
-setAppInfo({ version, tz: cfg.tz })
+setAppInfo({ version, tz: cfg.tz, publicUrl: cfg.publicUrl })
+
+// Confere o HTTPS público de tempos em tempos: a cada minuto enquanto estiver
+// com problema, a cada 10 minutos quando estiver tudo certo.
+async function refreshHealth() {
+  let h = null
+  try {
+    h = await checkHttps(cfg.publicUrl)
+    setHealth(h)
+    if (h && !h.ok) console.log(`[https] problema: ${h.reason}`)
+  } catch (err) {
+    console.error(err)
+  }
+  setTimeout(refreshHealth, h && !h.ok ? 60e3 : 10 * 60e3).unref()
+}
 const trackerJs = readFileSync(join(here, 'public', 't.js'), 'utf8')
 
 // Nome usado nas vendas cujas visitas não têm produto. Editável em Configurações;
@@ -246,7 +264,9 @@ async function handleAdmin(req, res, url) {
   if (path === '/' && method === 'GET') {
     const period = PERIODS[url.searchParams.get('periodo')] ? url.searchParams.get('periodo') : 'hoje'
     const product = getProduct(db, url.searchParams.get('produto'))
-    const data = dashboard(db, period, cfg.tz, new Date(), product?.id)
+    const tab = TABS[url.searchParams.get('aba')] ? url.searchParams.get('aba') : 'campanhas'
+    const now = new Date()
+    const data = dashboard(db, period, cfg.tz, now, product?.id)
     return html(
       res,
       dashboardPage(data, {
@@ -255,6 +275,8 @@ async function handleAdmin(req, res, url) {
         currency: cfg.currency,
         products: listProducts(db),
         productId: product?.id || null,
+        series: timeSeries(db, period, cfg.tz, now, product?.id),
+        tab,
       }),
     )
   }
@@ -318,8 +340,13 @@ async function handleAdmin(req, res, url) {
       return html(res, checklistHtml(product, productStatus(db, product), { tz: cfg.tz }))
     }
 
+    if (action === 'sinal' && method === 'GET') {
+      const body = { pingAt: product.last_ping_at, links: product.last_ping_links, https: getHealth() }
+      return send(res, 200, JSON.stringify(body), 'application/json; charset=utf-8')
+    }
+
     if (action === 'verificar' && method === 'GET') {
-      const r = await checkPage(product)
+      const r = await checkPage(product, fetch, cfg.publicUrl.replace(/^https?:\/\//, ''))
       return send(res, 200, JSON.stringify({ html: r }), 'application/json; charset=utf-8')
     }
 
@@ -402,5 +429,6 @@ createServer((req, res) => {
     if (!res.headersSent) send(res, 500, 'erro interno')
   })
 }).listen(cfg.port, () => {
+  setTimeout(refreshHealth, 3000).unref()
   console.log(`Tracking rodando em http://localhost:${cfg.port} (versão ${version.hash || 'desconhecida'})`)
 })
