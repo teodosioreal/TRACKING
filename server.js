@@ -102,10 +102,34 @@ async function refreshHealth() {
 }
 const trackerJs = readFileSync(join(here, 'public', 't.js'), 'utf8')
 const adsScript = readFileSync(join(here, 'deploy', 'google-ads-script.js'), 'utf8')
-const adsScriptFor = (base) =>
+// Script do Google Ads de um produto: só lê as vendas dele, com a chave dele.
+// Cola em qualquer conta do Google Ads; um produto não enxerga o outro.
+const adsScriptFor = (base, product) =>
   adsScript
-    .replace('__PLANILHA__', `${base}/google-ads.csv?key=${cfg.secretKey}&dias=3`)
-    .replace('__RELATORIO__', `${base}/script-relatorio?key=${cfg.secretKey}`)
+    .replaceAll('__PRODUTO__', product.name.replace(/[\\'\n\r]/g, ' '))
+    .replace('__PLANILHA__', `${base}/s/${product.id}.csv?k=${product.script_key}&dias=3`)
+    .replace('__RELATORIO__', `${base}/s/${product.id}/relatorio?k=${product.script_key}`)
+
+// Produtos que já têm o script próprio lendo a planilha deles.
+const productsWithOwnScript = () =>
+  db
+    .prepare(`SELECT substr(key, 14) AS id FROM settings WHERE key LIKE 'script_fetch:%'`)
+    .all()
+    .map((r) => r.id)
+
+// "Reenviar últimos 30 dias" (Diagnóstico): cada script (de cada produto, ou o
+// antigo) traz a janela inteira uma vez na próxima leitura.
+function resendDays(scope, dias) {
+  const pedido = getSetting(db, 'reenviar')
+  if (!pedido) return dias
+  // (true = pedido feito pela versão anterior, antes de cada produto ter script)
+  const at = typeof pedido === 'string' ? pedido : new Date(0).toISOString()
+  const feito = getSetting(db, `reenviado:${scope}`)
+  if (feito && feito >= at) return dias
+  setSetting(db, `reenviado:${scope}`, new Date().toISOString())
+  console.log(`[planilha] reenvio da janela inteira entregue ao script (${scope})`)
+  return cfg.exportDays
+}
 
 // Nome usado nas vendas cujas visitas não têm produto. Editável em Configurações;
 // o CONVERSION_NAME do .env é só o valor inicial.
@@ -325,18 +349,15 @@ async function handlePublic(req, res, url) {
     }
     // "dias" encurta a janela (o script do Google Ads usa 3 para não reenviar 30 dias toda hora).
     let dias = Number.parseInt(url.searchParams.get('dias'), 10)
-    // "Reenviar últimos 30 dias" (Diagnóstico): a próxima leitura do script
-    // traz a janela inteira uma vez.
-    if (!admin && getSetting(db, 'reenviar')) {
-      dias = cfg.exportDays
-      setSetting(db, 'reenviar', false)
-      console.log('[planilha] reenvio da janela inteira entregue ao script')
-    }
+    if (!admin) dias = resendDays(pid || 'all', dias)
+    // Planilha antiga (script de antes, um por conta): deixa de fora os
+    // produtos que já têm o script próprio.
     const csv = exportGoogleAdsCsv(db, {
       conversionName: defaultConversion(),
       currency: cfg.currency,
       days: dias >= 1 && dias <= 90 ? dias : cfg.exportDays,
       productId: pid || null,
+      excludeProductIds: pid ? [] : productsWithOwnScript(),
     })
     // Leitura feita pelo Google Ads (não por você no navegador logado).
     if (!admin) {
@@ -351,7 +372,50 @@ async function handlePublic(req, res, url) {
     return true
   }
 
-  // O script do Google Ads conta quantas vendas enviou (ou o erro).
+  // Planilha e relatório do script de UM produto (/s/<produto>.csv e
+  // /s/<produto>/relatorio). A chave é a do produto: ela não abre os outros.
+  const ms = path.match(/^\/s\/(p[a-z0-9]{8})(\.csv|\/relatorio)$/)
+  if (ms) {
+    const product = getProduct(db, ms[1])
+    if (!product || !product.script_key || !safeEqual(url.searchParams.get('k') || '', product.script_key)) {
+      send(res, 403, 'chave inválida')
+      return true
+    }
+    if (ms[2] === '.csv' && (method === 'GET' || method === 'HEAD')) {
+      const dias = resendDays(product.id, Number.parseInt(url.searchParams.get('dias'), 10))
+      const csv = exportGoogleAdsCsv(db, {
+        conversionName: product.conversion_name,
+        currency: cfg.currency,
+        days: dias >= 1 && dias <= 90 ? dias : cfg.exportDays,
+        productId: product.id,
+      })
+      const at = new Date().toISOString()
+      setSetting(db, `script_fetch:${product.id}`, { at, ua: req.headers['user-agent'] || '' })
+      setSetting(db, 'csv_fetch_log', [...(getSetting(db, 'csv_fetch_log') || []), at].slice(-500))
+      send(res, 200, method === 'HEAD' ? '' : csv, 'text/csv; charset=utf-8', {
+        'Content-Disposition': 'inline; filename="google-ads-conversoes.csv"',
+      })
+      return true
+    }
+    if (ms[2] === '/relatorio' && method === 'POST') {
+      const report = parseScriptReport(await readBody(req))
+      if (!report) {
+        send(res, 400, 'relatório inválido')
+        return true
+      }
+      setSetting(db, `script_report:${product.id}`, report)
+      console.log(
+        `[script ${product.name}] ${report.erro ? `erro: ${report.erro}` : `${report.enviadas} venda(s) enviada(s)`}${report.conta ? ` conta=${report.conta.id}` : ''}`,
+      )
+      send(res, 200, 'ok')
+      return true
+    }
+    send(res, 405, 'método não permitido')
+    return true
+  }
+
+  // Script antigo (um por conta, todos os produtos): continua aceito até ser
+  // trocado pelo script de cada produto.
   if (path === '/script-relatorio' && method === 'POST') {
     if (!safeEqual(url.searchParams.get('key') || '', cfg.secretKey)) {
       send(res, 403, 'chave inválida')
@@ -482,7 +546,7 @@ async function handleAdmin(req, res, url) {
 
     if (!action && method === 'GET') {
       const tab = PRODUCT_TABS[url.searchParams.get('aba')] ? url.searchParams.get('aba') : 'status'
-      return html(res, renderProduct(tab, { adsScript: adsScriptFor(baseUrl(req)) }))
+      return html(res, renderProduct(tab, { adsScript: adsScriptFor(baseUrl(req), product) }))
     }
 
     if (!action && method === 'POST') {
@@ -683,10 +747,8 @@ async function handleAdmin(req, res, url) {
               : url.searchParams.has('ips_erro')
                 ? { text: url.searchParams.get('ips_erro'), bad: true }
                 : null,
-        csvFetch: getSetting(db, 'csv_fetch:all'),
-        scriptReport: getSetting(db, 'script_report'),
+        legacyFetch: getSetting(db, 'csv_fetch:all'),
         tz: cfg.tz,
-        adsScript: adsScriptFor(baseUrl(req)),
         postbacks: recentPostbacks(db, 15),
         internalIps: getSetting(db, 'internal_ips') || DEFAULT_INTERNAL_CIDRS,
       }),
@@ -695,11 +757,14 @@ async function handleAdmin(req, res, url) {
 
   if (path === '/diagnostico' && method === 'GET') {
     const d = runDiagnostics(db, { health: getHealth(), exportDays: cfg.exportDays, defaultConversion: defaultConversion() })
-    return html(res, diagnosticsPage(d, { resendPending: Boolean(getSetting(db, 'reenviar')), flash: url.searchParams.has('ok') }))
+    // Pedido de reenvio vale por 2 horas (tempo de todos os scripts rodarem).
+    const pedido = getSetting(db, 'reenviar')
+    const resendPending = typeof pedido === 'string' && Date.now() - new Date(pedido).getTime() < 2 * 3600e3
+    return html(res, diagnosticsPage(d, { resendPending, flash: url.searchParams.has('ok') }))
   }
 
   if (path === '/diagnostico/reenviar' && method === 'POST') {
-    setSetting(db, 'reenviar', true)
+    setSetting(db, 'reenviar', new Date().toISOString())
     return redirect(res, '/diagnostico?ok=1')
   }
 

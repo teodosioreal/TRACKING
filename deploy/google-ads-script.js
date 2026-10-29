@@ -1,12 +1,15 @@
-// Script do Google Ads: lê a planilha do rastreador e envia as vendas como
-// conversões. Cole em Google Ads → Ferramentas → Ações em massa → Scripts,
-// clique em Autorizar e deixe a Frequência em "Por hora". O painel
-// (Configurações) mostra este mesmo código já com o seu link.
+// Script do Google Ads do produto: __PRODUTO__
+// Envia para o Google Ads as vendas DESTE produto e de nenhum outro.
+// Cole na conta de anúncios onde este produto roda: Ferramentas → Ações em
+// massa → Scripts → +, dê o nome "Tracking - __PRODUTO__", clique em Autorizar,
+// Executar e deixe a Frequência em "Por hora". Cada produto tem o seu script.
+var PRODUTO = '__PRODUTO__';
 var PLANILHA = '__PLANILHA__';
 // Para onde o script conta ao rastreador quantas vendas enviou (ou o erro).
 var RELATORIO = '__RELATORIO__';
 
 function main() {
+  Logger.log('Produto: ' + PRODUTO);
   var relatorio = { enviadas: 0, porConversao: {}, erro: null, conta: conta() };
   try {
     relatorio.enviadas = enviar(relatorio.porConversao);

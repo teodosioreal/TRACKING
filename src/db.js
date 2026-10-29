@@ -1,5 +1,6 @@
 import { DatabaseSync } from 'node:sqlite'
 import { mkdirSync } from 'node:fs'
+import { randomBytes } from 'node:crypto'
 import { dirname } from 'node:path'
 import { classifySource, pageKey, DEFAULT_INTERNAL_CIDRS } from './source.js'
 
@@ -133,6 +134,11 @@ export function openDb(path) {
   if (!pcols.has('affiliate_url')) db.exec('ALTER TABLE products ADD COLUMN affiliate_url TEXT')
   if (!pcols.has('tracking_param')) db.exec('ALTER TABLE products ADD COLUMN tracking_param TEXT')
   if (!pcols.has('extra_urls')) db.exec('ALTER TABLE products ADD COLUMN extra_urls TEXT')
+  // Chave do script do Google Ads de cada produto: o script de um produto só
+  // lê as vendas dele. Produtos antigos ganham a chave aqui, sem mudar mais nada.
+  if (!pcols.has('script_key')) db.exec('ALTER TABLE products ADD COLUMN script_key TEXT')
+  const fillKey = db.prepare('UPDATE products SET script_key = ? WHERE id = ?')
+  for (const r of db.prepare('SELECT id FROM products WHERE script_key IS NULL').all()) fillKey.run(newScriptKey(), r.id)
   const ppcols = new Set(db.prepare('PRAGMA table_info(page_pings)').all().map((c) => c.name))
   if (!ppcols.has('candidates')) db.exec('ALTER TABLE page_pings ADD COLUMN candidates TEXT')
   if (!cols.has('read_at')) db.exec('ALTER TABLE clicks ADD COLUMN read_at TEXT') // "leu a página" (rolou 50% ou ficou 30s+)
@@ -160,6 +166,10 @@ export function openDb(path) {
   }
 
   return db
+}
+
+export function newScriptKey() {
+  return randomBytes(18).toString('hex')
 }
 
 export function getSetting(db, key) {

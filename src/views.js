@@ -560,12 +560,13 @@ export function checklistHtml(product, st, { tz }) {
     items.push(item('wait', '4', 'Postback da conta', 'Nenhum postback recebido ainda. Configure uma vez em <a href="/configuracoes#postback-conta">Configurações → Postback da conta</a>.'))
   }
 
+  const conta = st.scriptReport?.conta ? ` Conta ${esc(st.scriptReport.conta.nome || '')} (${esc(st.scriptReport.conta.id || '')}).` : ''
   items.push(
     st.scriptReport?.erro
-      ? item('bad', '!', 'Google Ads: último envio com erro', `${ago(st.scriptReport.at)}: ${esc(st.scriptReport.erro)}`)
+      ? item('bad', '!', 'Script deste produto: último envio com erro', `${ago(st.scriptReport.at)}: ${esc(st.scriptReport.erro)}`)
       : st.csvFetch
-      ? item('ok', '✓', 'Google Ads lendo a planilha', `Última leitura ${ago(st.csvFetch.at)} (${esc(when(st.csvFetch.at, tz))}).`)
-      : item('wait', '5', 'Google Ads lendo a planilha', 'Ainda não houve leitura. Cole o script do Google Ads (aba 3. Google Ads).'),
+      ? item('ok', '✓', 'Script deste produto no Google Ads', `Rodou ${ago(st.csvFetch.at)} (${esc(when(st.csvFetch.at, tz))}).${conta}`)
+      : item('wait', '5', 'Script deste produto no Google Ads', `Ainda não rodou. Copie o script deste produto na aba <a href="/produtos/${esc(product.id)}?aba=google">3. Google Ads</a> e cole na conta onde ele roda.${st.legacyFetch ? ' (O script antigo, de todos os produtos, ainda envia as vendas deste produto até você trocar.)' : ''}`),
   )
 
   return `<ul class="check">${items.join('')}</ul>`
@@ -594,29 +595,24 @@ function conversionSteps(name) {
 <p class="muted"><b>Conta dentro de uma MCC?</b> Na MCC, em ${where('Metas → Conversões → Configurações → Acompanhamento de conversões entre contas')}, a coluna <b>“Conta de conversão”</b> da subconta tem que estar <b>“Cliente”</b>. Senão a conversão e o script ficam presos na MCC, e não na conta de anúncios.</p>`
 }
 
-// Resultado do último envio do script do Google Ads.
-function scriptReportHtml(rep, { conversionName = null, csvFetch = null, tz } = {}) {
-  if (!rep) {
-    return csvFetch
-      ? '<div class="live old"><span class="pulse"></span><div><b>Sem relatório de envio.</b><span>O script leu a planilha, mas é a versão antiga, que não conta o resultado. Copie o script de novo e cole por cima no Google Ads.</span></div></div>'
-      : ''
-  }
-  const conta = rep.conta ? ` · conta ${esc(rep.conta.nome || '')}${rep.conta.id ? ` (${esc(rep.conta.id)})` : ''}` : ''
+// Resultado do último envio do script do Google Ads de um produto.
+function scriptReportHtml(rep, { tz } = {}) {
+  if (!rep) return ''
+  const conta = rep.conta ? ` · na conta <b>${esc(rep.conta.nome || '')}</b>${rep.conta.id ? ` (${esc(rep.conta.id)})` : ''}` : ''
   if (rep.erro) {
     return `<div class="live" style="border:1px solid var(--bad);background:var(--badbg)"><div class="ic" style="background:var(--bad)">!</div><div><b class="bad">Último envio com erro</b>
 <span>${ago(rep.at)} (${esc(when(rep.at, tz))})${conta}</span><span class="params"><code>${esc(rep.erro)}</code></span></div></div>`
   }
-  const deste = conversionName != null ? ` · deste produto: <b>${rep.porConversao?.[conversionName] || 0}</b>` : ''
   return `<div class="live fresh"><div class="ic">✓</div><div><b>Último envio: ${rep.enviadas} venda(s), sem erro</b>
-<span>${ago(rep.at)} (${esc(when(rep.at, tz))})${deste}${conta}</span>
+<span>${ago(rep.at)} (${esc(when(rep.at, tz))})${conta}</span>
 <span>O Google processa o envio depois: se ele recusar alguma linha (ex.: nome de conversão diferente), o motivo aparece em ${where('Ferramentas → Ações em massa → Uploads')}.</span></div></div>`
 }
 
 // Passo a passo do script no Google Ads.
-function scriptSteps() {
+function scriptSteps(name) {
   return `<ol>
-<li>Na <b>conta de anúncios</b> (não na MCC): ${where('Ferramentas → Ações em massa → Scripts → +')}.</li>
-<li>Apague o que vier escrito e cole o script (botão abaixo).</li>
+<li>Na <b>conta de anúncios</b> onde este produto roda (não na MCC): ${where('Ferramentas → Ações em massa → Scripts → +')}.</li>
+<li>Dê o nome <b>Tracking - ${esc(name)}</b>, apague o que vier escrito e cole o script (botão abaixo). Outro produto na mesma conta? Ele tem o script dele: é só criar outro.</li>
 <li>Clique em <b>Autorizar</b> e aprove com a sua conta Google. <b>Esse clique tem que ser seu</b> (o Google não aceita automação nessa tela). Se a janela não abrir, é o <b>bloqueador de pop-up</b>: libere pop-ups para <code>ads.google.com</code> e clique de novo. Se você executar sem autorizar, aparece <i>“Falha devido a erros de autenticação”</i>.</li>
 <li>Clique em <b>Executar</b> (não em “Visualizar”) e depois em <b>Salvar</b>.</li>
 <li>Na lista de scripts, na coluna <b>Frequência</b>, escolha <b>Por hora</b>.</li>
@@ -745,7 +741,7 @@ ${
     body = `<section><h3>Postback da conta <span class="right">um só para todos os produtos</span></h3><div class="box">
 ${
   pb
-    ? `<p class="ok"><b>✓ Funcionando.</b> Último postback ${ago(pb.created_at)}.</p><p class="muted">O postback é configurado uma vez na conta da ${esc(platformName)} e vale para todos os produtos: a venda cai neste produto pela visita que gerou ela. Não precisa cadastrar nada por produto.</p>`
+    ? `<p class="ok"><b>✓ O postback da conta está chegando.</b></p><p class="muted">Ele é configurado uma vez na conta da ${esc(platformName)}. Cada venda cai só no produto da visita que gerou ela: as vendas deste produto aparecem abaixo, e as de outros produtos ficam na página deles.</p>`
     : `<p class="bad"><b>Ainda não chegou nenhum postback.</b></p><p class="muted">O postback é configurado uma vez, na conta, e vale para todos os produtos.</p>`
 }
 <a class="btn ${pb ? '' : 'primary'}" href="/configuracoes#postback-conta">${pb ? 'Ver o postback da conta' : 'Configurar o postback da conta'}</a>
@@ -780,7 +776,7 @@ ${table(
 <form method="post" action="/produtos/${pid}/simular-venda" class="actions"><button type="submit">Simular venda de teste</button></form>
 ${st.lastSale && st.lastSale.status === 'test' ? `<p class="ok">✓ Venda de teste ligada a este produto ${ago(st.lastSale.created_at)}.</p>` : ''}</div></section>`
   } else if (tab === 'google') {
-    body = `<div class="flash info">No Google Ads você faz só 2 coisas: <b>criar a conversão</b> deste produto e <b>colar o script</b> (uma vez por conta). A plataforma coloca cada venda na planilha e o script envia para o Google de hora em hora.</div>
+    body = `<div class="flash info">Na conta do Google Ads onde <b>${esc(product.name)}</b> roda, você faz 2 coisas: <b>criar a conversão</b> e <b>colar o script deste produto</b>. Cada produto tem o seu script: ele envia só as vendas deste produto e funciona em qualquer conta.</div>
 
 <section><h3>1. Crie a conversão deste produto</h3><div class="box">
 <form class="conv" method="post" action="/produtos/${pid}/conversao">
@@ -793,12 +789,17 @@ ${conversionSteps(product.conversion_name)}
 <a class="btn" href="https://ads.google.com/aw/conversions" target="_blank" rel="noopener">Abrir Conversões no Google Ads ↗</a>
 </div></section>
 
-<section><h3>2. Cole o script no Google Ads <span class="right">uma vez por conta, vale para todos os produtos</span></h3><div class="box">
-${scriptSteps()}
-${copyHidden('ads-script', adsScript, 'Copiar script')}
-<p>${st.csvFetch ? `<span class="ok">✓ O Google Ads leu a planilha ${ago(st.csvFetch.at)}.</span>` : '<span class="warn">O script ainda não leu a planilha.</span> <span class="muted">Depois de colar, clique em Executar e recarregue esta página.</span>'}
+<section><h3>2. Cole o script deste produto <span class="right">só de ${esc(product.name)}</span></h3><div class="box">
+${scriptSteps(product.name)}
+${copyHidden('ads-script', adsScript, `Copiar script de ${product.name}`)}
+<p>${st.csvFetch ? `<span class="ok">✓ O script deste produto rodou ${ago(st.csvFetch.at)}.</span>` : '<span class="warn">O script deste produto ainda não rodou.</span> <span class="muted">Depois de colar, clique em Executar e recarregue esta página.</span>'}
 <span class="muted">· ${st.salesForGoogle} venda(s) deste produto com gclid.</span></p>
-${scriptReportHtml(st.scriptReport, { conversionName: product.conversion_name, csvFetch: st.csvFetch, tz })}
+${scriptReportHtml(st.scriptReport, { tz })}
+${
+  !st.csvFetch && st.legacyFetch
+    ? `<div class="hint warn"><b>Script antigo ainda ativo.</b> Antes, era um script por conta com as vendas de todos os produtos. Ele continua funcionando até você trocar: cole o script acima, clique em Executar e, depois que aparecer “rodou”, apague o script antigo da conta (o de nome “Tracking - vendas”). A partir da primeira execução deste script, as vendas deste produto saem do script antigo, então nenhuma venda vai em dobro.</div>`
+    : ''
+}
 </div></section>
 
 <details class="howto"><summary>Dicas opcionais (não precisa para funcionar)</summary>
@@ -906,9 +907,8 @@ try{const tp=document.getElementById('test-page');const r=await(await fetch('/pr
 
 // ---------------------------------------------------------------- Configurações
 
-export function settingsPage({ base, key, conversionName, currency, days, lastPostback, csvFetch, scriptReport, tz, flash, adsScript = '', postbacks = [], internalIps = [] }) {
+export function settingsPage({ base, key, conversionName, currency, days, lastPostback, legacyFetch, tz, flash, postbacks = [], internalIps = [] }) {
   const postback = `${base}/postback?key=${key}&subid={SUBID}&order={ORDERID}&amount={COMMISSION_AMOUNT}&type={CONV_TYPE}&product={PRODUCT_CODENAME}`
-  const csv = `${base}/google-ads.csv?key=${key}`
   return layout(
     'Configurações — Tracking',
     'config',
@@ -954,12 +954,14 @@ ${table(
 )}
 </section>
 
-<section><h3>Google Ads — script (um por conta)</h3><div class="box">
-<p>Um script por conta de anúncios envia as vendas de todos os produtos, cada uma com o nome de conversão do seu produto.</p>
-${scriptSteps()}
-${copyHidden('ads-script', adsScript, 'Copiar script')}
-<p>${csvFetch ? `<span class="ok">✓ Lida pela última vez ${ago(csvFetch.at)}.</span>` : '<span class="muted">Ainda não foi lida pelo Google Ads.</span>'} <span class="muted">Vendas aprovadas com gclid, em ${esc(currency)}. O Google ignora vendas que já importou.</span></p>
-${scriptReportHtml(scriptReport, { csvFetch, tz })}
+<section><h3>Google Ads — script</h3><div class="box">
+<p><b>Cada produto tem o seu script</b>, na página do produto → aba <b>3. Google Ads</b>. Ele envia só as vendas daquele produto e você cola na conta do Google Ads onde aquele produto roda. Dois produtos na mesma conta = dois scripts.</p>
+<a class="btn" href="/produtos">Ir para Produtos</a>
+${
+  legacyFetch
+    ? `<p class="warn" style="margin-top:12px"><b>Script antigo ainda ativo</b> (um por conta, com todos os produtos): rodou pela última vez ${ago(legacyFetch.at)}. Ele continua enviando as vendas dos produtos que ainda não têm o script próprio. Quando todos os produtos tiverem o seu, apague o script antigo da conta.</p>`
+    : ''
+}
 </div></section>
 
 <section id="versao"><h3>Versão no ar</h3><div class="box">

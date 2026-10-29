@@ -45,21 +45,29 @@ export function runDiagnostics(db, { now = new Date(), health = null, exportDays
     }
   }
 
-  // --- Script do Google Ads --------------------------------------------------
-  const fetchAll = getSetting(db, 'csv_fetch:all')
-  const report = getSetting(db, 'script_report')
-  if (!fetchAll) {
-    general.push(f('bad', 'O script do Google Ads nunca leu a planilha', '', 'Cole o script (Configurações) na conta de anúncios, Autorizar, Executar e Frequência "Por hora".'))
-  } else {
-    const hours = (t - new Date(fetchAll.at).getTime()) / 3600e3
-    if (hours > 3) {
+  // --- Script do Google Ads (um por produto) --------------------------------
+  // Cada produto tem o seu script; o antigo (um por conta, todos os produtos)
+  // só aparece enquanto ainda estiver rodando.
+  for (const p of listProducts(db)) {
+    const fetch = getSetting(db, `script_fetch:${p.id}`)
+    const report = getSetting(db, `script_report:${p.id}`)
+    const legacy = getSetting(db, 'csv_fetch:all')
+    if (!fetch) {
       general.push(
-        f('warn', 'O script do Google Ads não lê a planilha há mais de 3 horas', `Última leitura ${ago(fetchAll.at, t)}.`,
-          'No Google Ads → Scripts, confira se o script está ativo, com Frequência "Por hora" e autorizado.'),
+        legacy
+          ? f('warn', `${p.name}: ainda sem o script próprio`, 'As vendas dele estão indo pelo script antigo (um por conta).',
+              `Copie o script em Produtos → ${p.name} → 3. Google Ads e cole na conta onde ele roda. Depois apague o script antigo.`)
+          : f('bad', `${p.name}: o script do Google Ads nunca rodou`, '',
+              `Copie o script em Produtos → ${p.name} → 3. Google Ads, cole na conta onde ele roda, Autorizar, Executar e Frequência "Por hora".`),
       )
-    } else general.push(f('ok', 'Script do Google Ads rodando', `Última leitura ${ago(fetchAll.at, t)}.`))
-    if (report?.erro) general.push(f('bad', 'O último envio do script deu erro', `${ago(report.at, t)}: ${report.erro}`, 'Veja a mensagem; erro de autenticação = clicar em Autorizar de novo no script.'))
-    else if (!report) general.push(f('warn', 'Script antigo, sem relatório de envio', '', 'Copie o script de novo (Configurações) e cole por cima no Google Ads.'))
+      continue
+    }
+    const hours = (t - new Date(fetch.at).getTime()) / 3600e3
+    const conta = report?.conta ? ` Conta ${report.conta.nome || ''} (${report.conta.id || ''}).` : ''
+    if (report?.erro) general.push(f('bad', `${p.name}: o último envio do script deu erro`, `${ago(report.at, t)}: ${report.erro}`, 'Erro de autenticação = clicar em Autorizar de novo no script.'))
+    else if (hours > 3)
+      general.push(f('warn', `${p.name}: o script não roda há mais de 3 horas`, `Última vez ${ago(fetch.at, t)}.${conta}`, 'No Google Ads → Scripts, confira se ele está ativo, autorizado e com Frequência "Por hora".'))
+    else general.push(f('ok', `${p.name}: script rodando`, `Última vez ${ago(fetch.at, t)}.${conta}`))
   }
 
   // --- Vendas que não foram para o Google -------------------------------------

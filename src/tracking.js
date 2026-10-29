@@ -191,8 +191,10 @@ function csvCell(v) {
 // o script novo, que sabe ler as colunas extras, manda essas vendas).
 // Entram vendas aprovadas com gclid, gbraid ou wbraid. Cada venda usa o nome
 // de conversão do seu produto (ou o padrão, se a visita não tem produto).
-// Com productId, só as vendas daquele produto.
-export function exportGoogleAdsCsv(db, { conversionName, currency, days, productId }, now = new Date()) {
+// Com productId, só as vendas daquele produto. excludeProductIds tira da
+// planilha antiga (de todos os produtos) os produtos que já têm script próprio,
+// para a mesma venda não ir para duas contas.
+export function exportGoogleAdsCsv(db, { conversionName, currency, days, productId, excludeProductIds = [] }, now = new Date()) {
   const since = new Date(now.getTime() - days * 86400000).toISOString()
   const rows = db
     .prepare(
@@ -202,9 +204,10 @@ export function exportGoogleAdsCsv(db, { conversionName, currency, days, product
          LEFT JOIN products p ON p.id = c.product_id
         WHERE v.status = 'approved' AND (c.gclid IS NOT NULL OR c.gbraid IS NOT NULL OR c.wbraid IS NOT NULL)
           AND v.created_at >= ? AND (? IS NULL OR c.product_id = ?)
+          AND (c.product_id IS NULL OR c.product_id NOT IN (SELECT value FROM json_each(?)))
         ORDER BY v.created_at`,
     )
-    .all(conversionName, since, productId ?? null, productId ?? null)
+    .all(conversionName, since, productId ?? null, productId ?? null, JSON.stringify(excludeProductIds))
 
   const lines = [
     'Parameters:TimeZone=+0000',

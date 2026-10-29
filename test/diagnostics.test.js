@@ -34,7 +34,8 @@ test('diagnóstico aponta os problemas de cada parte', () => {
   const g = titles(d.general).join('\n')
   assert.match(g, /bad: O endereço do rastreador não abre com HTTPS/)
   assert.match(g, /ok: Postback chegando/)
-  assert.match(g, /bad: O script do Google Ads nunca leu a planilha/)
+  assert.match(g, /bad: NerVive: o script do Google Ads nunca rodou/)
+  assert.match(g, /bad: Outro: o script do Google Ads nunca rodou/)
 
   const s = titles(d.sales).join('\n')
   assert.match(s, /info: 6 venda\(s\)/)
@@ -58,13 +59,14 @@ test('diagnóstico aponta os problemas de cada parte', () => {
 })
 
 test('venda lida pelo script em até 3 dias não aparece como "pode não ter sido enviada"', () => {
-  const { db } = scenario()
-  setSetting(db, 'csv_fetch:all', { at: ago(0.5).toISOString() })
+  const { db, a } = scenario()
+  setSetting(db, `script_fetch:${a}`, { at: ago(0.5).toISOString() })
   setSetting(db, 'csv_fetch_log', [ago(28).toISOString(), ago(0.5).toISOString()])
-  setSetting(db, 'script_report', { at: ago(0.5).toISOString(), enviadas: 1, porConversao: {}, erro: null })
+  setSetting(db, `script_report:${a}`, { at: ago(0.5).toISOString(), enviadas: 1, porConversao: {}, erro: null, conta: { id: '118-239-8964', nome: 'NervCalm' } })
   const d = runDiagnostics(db, { now, health: { ok: true } })
   const all = titles([...d.general, ...d.sales]).join('\n')
-  assert.match(all, /ok: Script do Google Ads rodando/)
+  assert.match(all, /ok: NerVive: script rodando/)
+  assert.match(all, /bad: Outro: o script do Google Ads nunca rodou/)
   assert.match(all, /ok: HTTPS do rastreador funcionando/)
   assert.doesNotMatch(all, /pode não ter enviado/)
 })

@@ -1,6 +1,6 @@
 // Cadastro de produtos e o estado de cada etapa da configuração.
 import { randomBytes } from 'node:crypto'
-import { getSetting } from './db.js'
+import { getSetting, newScriptKey } from './db.js'
 
 export const PLATFORMS = { buygoods: 'BuyGoods', outra: 'Outra plataforma' }
 // Parâmetro do link de afiliado que leva o ID da visita, por plataforma.
@@ -88,8 +88,8 @@ export function parseProductForm(form) {
 export function createProduct(db, values, now = new Date()) {
   const id = newPid()
   db.prepare(
-    `INSERT INTO products (id, name, platform, conversion_name, review_url, affiliate_url, tracking_param, extra_urls, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO products (id, name, platform, conversion_name, review_url, affiliate_url, tracking_param, extra_urls, created_at, script_key)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     id,
     values.name,
@@ -100,6 +100,7 @@ export function createProduct(db, values, now = new Date()) {
     values.tracking_param,
     values.extra_urls,
     now.toISOString(),
+    newScriptKey(),
   )
   return id
 }
@@ -219,7 +220,7 @@ export function setupProgress(st) {
     { key: 'script', label: 'Script instalado', done: Boolean(st.ping) },
     { key: 'links', label: 'Links de compra marcados', done: Boolean(st.ping && st.ping.links > 0) },
     { key: 'postback', label: 'Postback da conta', done: Boolean(st.lastRealSale || st.anyPostback) },
-    { key: 'planilha', label: 'Google Ads lendo a planilha', done: Boolean(st.csvFetch) },
+    { key: 'planilha', label: 'Script deste produto no Google Ads', done: Boolean(st.csvFetch) },
     { key: 'google', label: 'Visita vinda do anúncio', done: Boolean(st.lastGoogleVisit) },
   ]
   const done = steps.filter((s) => s.done).length
@@ -267,8 +268,11 @@ export function productStatus(db, product) {
     lastRealSale: lastRealSale || null,
     anyPostback: anyPostback || null,
     salesForGoogle: pendingForGoogle,
-    csvFetch: getSetting(db, `csv_fetch:${product.id}`) || getSetting(db, 'csv_fetch:all'),
-    scriptReport: getSetting(db, 'script_report'),
+    // Só o script deste produto conta. O script antigo (um por conta, de todos
+    // os produtos) aparece à parte, como aviso para trocar.
+    csvFetch: getSetting(db, `script_fetch:${product.id}`),
+    scriptReport: getSetting(db, `script_report:${product.id}`),
+    legacyFetch: getSetting(db, 'csv_fetch:all'),
   }
 }
 
@@ -316,7 +320,9 @@ export function deleteProduct(db, id) {
     db.prepare('DELETE FROM conversions WHERE subid IN (SELECT id FROM clicks WHERE product_id = ?)').run(id)
     db.prepare('DELETE FROM clicks WHERE product_id = ?').run(id)
     db.prepare('DELETE FROM product_images WHERE product_id = ?').run(id)
-    db.prepare('DELETE FROM settings WHERE key = ?').run(`csv_fetch:${id}`)
+    for (const k of [`csv_fetch:${id}`, `script_fetch:${id}`, `script_report:${id}`, `reenviado:${id}`]) {
+      db.prepare('DELETE FROM settings WHERE key = ?').run(k)
+    }
     db.prepare('DELETE FROM products WHERE id = ?').run(id)
     db.exec('COMMIT')
   } catch (err) {
