@@ -80,7 +80,7 @@ test('cada venda vai com o nome de conversão do seu produto', () => {
 
   const onlyA = exportGoogleAdsCsv(db, { ...opts, productId: a }, now).trim().split('\r\n')
   assert.equal(onlyA.length, 3)
-  assert.match(onlyA[2], /^GA,Compra - A,2026-10-26 10:00:00\+0000,10\.00,USD$/)
+  assert.match(onlyA[2], /^GA,Compra - A,2026-10-26 10:00:00\+0000,10\.00,USD,,$/)
 })
 
 test('venda de teste não vai pro Google nem entra nos totais', () => {

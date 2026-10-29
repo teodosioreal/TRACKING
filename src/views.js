@@ -24,10 +24,10 @@ function ago(iso, now = Date.now()) {
 const CSS = `
 :root{color-scheme:light;--bg:#eef1f5;--card:#fff;--text:#0f172a;--text2:#334155;--muted:#64748b;--line:#e2e8f0;--soft:#f6f8fb;--accent:#2563eb;--accent-soft:#e8effd;
 --top:#0b1220;--top-text:#94a3b8;--series-1:#2a78d6;--ok:#15803d;--okbg:#e9f8ef;--warn:#a16207;--warnbg:#fdf6e3;--bad:#b91c1c;--badbg:#fdecec;
---o-pago:#2a78d6;--o-organico:#1baf7a;--o-referencia:#6250d6;--o-direto:#94a3b8;--o-sem:#eb6834;--o-teste:#eda100;--shadow:0 1px 2px rgba(15,23,42,.06),0 1px 3px rgba(15,23,42,.04)}
+--o-pago:#2a78d6;--o-organico:#1baf7a;--o-referencia:#6250d6;--o-direto:#94a3b8;--o-sem:#eb6834;--o-teste:#eda100;--o-robo:#dc2626;--o-interno:#78716c;--shadow:0 1px 2px rgba(15,23,42,.06),0 1px 3px rgba(15,23,42,.04)}
 @media (prefers-color-scheme:dark){:root{color-scheme:dark;--bg:#0a0d13;--card:#121721;--text:#e8ecf3;--text2:#c3cad6;--muted:#8a94a6;--line:#232a36;--soft:#171d28;--accent:#5b9cf5;--accent-soft:#15233a;
 --top:#06080d;--top-text:#8a94a6;--series-1:#3987e5;--ok:#4ade80;--okbg:#0f2a1b;--warn:#facc15;--warnbg:#2a250f;--bad:#f87171;--badbg:#2c1414;
---o-pago:#3987e5;--o-organico:#199e70;--o-referencia:#9085e9;--o-direto:#6b7280;--o-sem:#d95926;--o-teste:#c98500;--shadow:none}}
+--o-pago:#3987e5;--o-organico:#199e70;--o-referencia:#9085e9;--o-direto:#6b7280;--o-sem:#d95926;--o-teste:#c98500;--o-robo:#f87171;--o-interno:#a8a29e;--shadow:none}}
 *{box-sizing:border-box}html,body{margin:0}body{background:var(--bg);color:var(--text);font:13.5px/1.5 Inter,system-ui,-apple-system,Segoe UI,Roboto,sans-serif;-webkit-font-smoothing:antialiased}
 a{color:var(--accent)}code{font-size:12px}
 .top{background:var(--top);position:sticky;top:0;z-index:5}
@@ -68,7 +68,7 @@ td .sub2{display:block;color:var(--muted);font-size:11.5px}
 .tag{display:inline-block;padding:1px 8px;border-radius:999px;font-size:11.5px;font-weight:600;border:1px solid var(--line)}
 .tag.ok{background:var(--okbg);border-color:transparent;color:var(--ok)}.tag.bad{background:var(--badbg);border-color:transparent;color:var(--bad)}.tag.warn{background:var(--warnbg);border-color:transparent;color:var(--warn)}
 .otag{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:500;color:var(--text2)}.otag i{width:8px;height:8px;border-radius:999px;display:inline-block;background:var(--o-direto)}
-.otag.pago i,.otag.pago_outro i{background:var(--o-pago)}.otag.organico i{background:var(--o-organico)}.otag.referencia i{background:var(--o-referencia)}.otag.sem_clique i{background:var(--o-sem)}.otag.teste i{background:var(--o-teste)}
+.otag.pago i,.otag.pago_outro i{background:var(--o-pago)}.otag.organico i{background:var(--o-organico)}.otag.referencia i{background:var(--o-referencia)}.otag.sem_clique i{background:var(--o-sem)}.otag.teste i{background:var(--o-teste)}.otag.robo i{background:var(--o-robo)}.otag.interno i{background:var(--o-interno)}
 .ok{color:var(--ok)}.bad{color:var(--bad)}.warn{color:var(--warn)}.muted{color:var(--muted)}
 .empty{padding:26px 16px;color:var(--muted);text-align:center}
 .box{padding:14px 16px}.box p{margin:0 0 8px}.box ol{margin:0 0 10px;padding-left:20px}.box li{margin-bottom:7px}
@@ -906,7 +906,7 @@ try{const tp=document.getElementById('test-page');const r=await(await fetch('/pr
 
 // ---------------------------------------------------------------- Configurações
 
-export function settingsPage({ base, key, conversionName, currency, days, lastPostback, csvFetch, scriptReport, tz, flash, adsScript = '', postbacks = [] }) {
+export function settingsPage({ base, key, conversionName, currency, days, lastPostback, csvFetch, scriptReport, tz, flash, adsScript = '', postbacks = [], internalIps = [] }) {
   const postback = `${base}/postback?key=${key}&subid={SUBID}&order={ORDERID}&amount={COMMISSION_AMOUNT}&type={CONV_TYPE}&product={PRODUCT_CODENAME}`
   const csv = `${base}/google-ads.csv?key=${key}`
   return layout(
@@ -976,6 +976,15 @@ ${
 <p class="muted">Cada produto usa o nome de conversão definido na página dele. Este nome só vale para vendas de visitas <b>sem produto</b> (páginas com o script antigo, sem <code>?p=</code>).</p>
 <form class="conv" method="post" action="/configuracoes">
 <div class="row"><input type="text" name="conversion_name" value="${esc(conversionName)}" required maxlength="100"><button type="submit">Salvar</button></div>
+</form>
+</div></section>
+
+<section id="meus-ips"><h3>Meus IPs</h3><div class="box">
+<p class="muted">Visitas desses IPs/faixas contam como <b>Interno</b> (sua rede, time, testes manuais...) e ficam fora dos números do painel — continuam visíveis só na lista de Visitantes, para auditoria.</p>
+<form method="post" action="/configuracoes/ips">
+<label><b>IPs e faixas CIDR</b>, um por linha ou separados por vírgula/espaço (ex.: <code>1.2.3.4</code> ou <code>1.2.3.0/24</code>)
+<textarea name="internal_ips" rows="4" style="width:100%;font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--text)">${esc(internalIps.join('\n'))}</textarea></label>
+<div class="actions"><button type="submit" class="primary">Salvar</button></div>
 </form>
 </div></section>`,
   )

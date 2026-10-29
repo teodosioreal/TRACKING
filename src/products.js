@@ -139,7 +139,7 @@ export function listProducts(db, { archived = false } = {}) {
     .prepare(
       `SELECT p.*,
               (SELECT updated_at FROM product_images i WHERE i.product_id = p.id) AS image_at,
-              (SELECT COUNT(*) FROM clicks c WHERE c.product_id = p.id AND c.is_test = 0) AS visitas,
+              (SELECT COUNT(*) FROM clicks c WHERE c.product_id = p.id AND c.is_test = 0 AND (c.source IS NULL OR c.source NOT IN ('robo','interno'))) AS visitas,
               (SELECT COUNT(*) FROM conversions v JOIN clicks c ON c.id = v.subid
                 WHERE c.product_id = p.id AND v.status = 'approved') AS vendas,
               (SELECT COALESCE(SUM(v.amount), 0) FROM conversions v JOIN clicks c ON c.id = v.subid

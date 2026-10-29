@@ -56,7 +56,7 @@ import {
   loginPage,
   diagnosticsPage,
 } from './src/views.js'
-import { SOURCES } from './src/source.js'
+import { SOURCES, parseCidrList, DEFAULT_INTERNAL_CIDRS } from './src/source.js'
 import { readVersion } from './src/version.js'
 import { COOKIE, sessionManager, readCookie, sessionCookie, safeNext, loginLimiter } from './src/session.js'
 
@@ -655,6 +655,14 @@ async function handleAdmin(req, res, url) {
     return redirect(res, '/configuracoes?ok=1')
   }
 
+  if (path === '/configuracoes/ips' && method === 'POST') {
+    const text = String(new URLSearchParams(await readBody(req)).get('internal_ips') || '')
+    const { cidrs, error } = parseCidrList(text)
+    if (error) return redirect(res, `/configuracoes?ips_erro=${encodeURIComponent(error)}`)
+    setSetting(db, 'internal_ips', cidrs)
+    return redirect(res, '/configuracoes?ips_ok=1')
+  }
+
   if (path === '/configuracoes' && method === 'GET') {
     const lastPostback = lastPostbackSignal(db)
     return html(
@@ -670,12 +678,17 @@ async function handleAdmin(req, res, url) {
           ? { text: 'Nome padrão salvo.' }
           : url.searchParams.has('erro')
             ? { text: 'Nome inválido: não pode ficar vazio nem passar de 100 caracteres.', bad: true }
-            : null,
+            : url.searchParams.has('ips_ok')
+              ? { text: 'Meus IPs salvos.' }
+              : url.searchParams.has('ips_erro')
+                ? { text: url.searchParams.get('ips_erro'), bad: true }
+                : null,
         csvFetch: getSetting(db, 'csv_fetch:all'),
         scriptReport: getSetting(db, 'script_report'),
         tz: cfg.tz,
         adsScript: adsScriptFor(baseUrl(req)),
         postbacks: recentPostbacks(db, 15),
+        internalIps: getSetting(db, 'internal_ips') || DEFAULT_INTERNAL_CIDRS,
       }),
     )
   }

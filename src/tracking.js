@@ -2,7 +2,8 @@
 // planilha do Google Ads. Sem HTTP aqui, para dar para testar isolado.
 
 import { isValidPid } from './products.js'
-import { classifySource, pageKey } from './source.js'
+import { classifySource, pageKey, DEFAULT_INTERNAL_CIDRS } from './source.js'
+import { getSetting } from './db.js'
 
 const CID_RE = /^[A-Za-z0-9_-]{6,64}$/
 
@@ -64,7 +65,7 @@ export function recordClick(db, { cid, pid, test, url, referrer, ip, userAgent }
   row.user_agent = clip(userAgent, 500)
   row.product_id = existingProduct(db, pid)
   row.is_test = test ? 1 : 0
-  row.source = classifySource(row)
+  row.source = classifySource(row, getSetting(db, 'internal_ips') || DEFAULT_INTERNAL_CIDRS)
   row.page = pageKey(url)
 
   const cols = Object.keys(row)
@@ -83,6 +84,13 @@ export function recordOutbound(db, cid, now = new Date()) {
         WHERE id = ?`,
     )
     .run(now.toISOString(), now.toISOString(), cid)
+  return res.changes > 0
+}
+
+// "Leu a página": rolou 50% ou ficou 30s+ (o script decide e avisa uma vez).
+export function recordRead(db, cid, now = new Date()) {
+  if (!isValidCid(cid)) return false
+  const res = db.prepare(`UPDATE clicks SET read_at = COALESCE(read_at, ?) WHERE id = ?`).run(now.toISOString(), cid)
   return res.changes > 0
 }
 
@@ -177,30 +185,37 @@ function csvCell(v) {
   return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
 }
 
-// Planilha de conversões offline no modelo "Google Click ID" do Google Ads.
-// Só entram vendas aprovadas que vieram de um clique com gclid. Cada venda usa
-// o nome de conversão do seu produto (ou o padrão, se a visita não tem produto).
+// Planilha de conversões offline no modelo "Google Click ID" do Google Ads,
+// com GBRAID/WBRAID como colunas extras no fim (o script antigo, que só lê
+// as 5 primeiras colunas e exige gclid, ignora essas linhas sem quebrar — só
+// o script novo, que sabe ler as colunas extras, manda essas vendas).
+// Entram vendas aprovadas com gclid, gbraid ou wbraid. Cada venda usa o nome
+// de conversão do seu produto (ou o padrão, se a visita não tem produto).
 // Com productId, só as vendas daquele produto.
 export function exportGoogleAdsCsv(db, { conversionName, currency, days, productId }, now = new Date()) {
   const since = new Date(now.getTime() - days * 86400000).toISOString()
   const rows = db
     .prepare(
-      `SELECT c.gclid, v.created_at, v.amount, COALESCE(p.conversion_name, ?) AS name
+      `SELECT c.gclid, c.gbraid, c.wbraid, v.created_at, v.amount, COALESCE(p.conversion_name, ?) AS name
          FROM conversions v
          JOIN clicks c ON c.id = v.subid
          LEFT JOIN products p ON p.id = c.product_id
-        WHERE v.status = 'approved' AND c.gclid IS NOT NULL AND v.created_at >= ?
-          AND (? IS NULL OR c.product_id = ?)
+        WHERE v.status = 'approved' AND (c.gclid IS NOT NULL OR c.gbraid IS NOT NULL OR c.wbraid IS NOT NULL)
+          AND v.created_at >= ? AND (? IS NULL OR c.product_id = ?)
         ORDER BY v.created_at`,
     )
     .all(conversionName, since, productId ?? null, productId ?? null)
 
   const lines = [
     'Parameters:TimeZone=+0000',
-    'Google Click ID,Conversion Name,Conversion Time,Conversion Value,Conversion Currency',
+    'Google Click ID,Conversion Name,Conversion Time,Conversion Value,Conversion Currency,GBRAID,WBRAID',
   ]
   for (const r of rows) {
-    lines.push([r.gclid, r.name, googleTime(r.created_at), r.amount.toFixed(2), currency].map(csvCell).join(','))
+    lines.push(
+      [r.gclid, r.name, googleTime(r.created_at), r.amount.toFixed(2), currency, r.gclid ? null : r.gbraid, r.gclid || r.gbraid ? null : r.wbraid]
+        .map(csvCell)
+        .join(','),
+    )
   }
   return lines.join('\r\n') + '\r\n'
 }

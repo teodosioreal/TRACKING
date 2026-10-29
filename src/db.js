@@ -1,7 +1,7 @@
 import { DatabaseSync } from 'node:sqlite'
 import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
-import { classifySource, pageKey } from './source.js'
+import { classifySource, pageKey, DEFAULT_INTERNAL_CIDRS } from './source.js'
 
 export function openDb(path) {
   if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true })
@@ -93,6 +93,22 @@ export function openDb(path) {
       key   TEXT PRIMARY KEY,
       value TEXT
     );
+
+    -- Métricas do Google Ads (impressões/cliques/custo/palavra-chave) que o
+    -- script manda por dia + campanha + palavra-chave, para a conciliação
+    -- "Cliques Ads x Visitas pagas registradas" do Diagnóstico.
+    CREATE TABLE IF NOT EXISTS ads_metrics (
+      date          TEXT NOT NULL, -- "AAAA-MM-DD", no fuso da conta do Google Ads
+      campaign_id   TEXT NOT NULL,
+      campaign_name TEXT,
+      keyword       TEXT NOT NULL DEFAULT '',
+      impressions   INTEGER NOT NULL DEFAULT 0,
+      clicks        INTEGER NOT NULL DEFAULT 0,
+      cost_micros   INTEGER NOT NULL DEFAULT 0,
+      updated_at    TEXT NOT NULL,
+      PRIMARY KEY (date, campaign_id, keyword)
+    );
+    CREATE INDEX IF NOT EXISTS ads_metrics_date ON ads_metrics(date);
   `)
 
   // Colunas adicionadas depois da primeira versão (bancos já em produção).
@@ -119,6 +135,11 @@ export function openDb(path) {
   if (!pcols.has('extra_urls')) db.exec('ALTER TABLE products ADD COLUMN extra_urls TEXT')
   const ppcols = new Set(db.prepare('PRAGMA table_info(page_pings)').all().map((c) => c.name))
   if (!ppcols.has('candidates')) db.exec('ALTER TABLE page_pings ADD COLUMN candidates TEXT')
+  if (!cols.has('read_at')) db.exec('ALTER TABLE clicks ADD COLUMN read_at TEXT') // "leu a página" (rolou 50% ou ficou 30s+)
+
+  // Lista de IPs/faixas (CIDR) que não contam como visita — "Meus IPs" em
+  // Configurações. Só define o padrão se ainda não tiver sido cadastrado.
+  if (getSetting(db, 'internal_ips') === null) setSetting(db, 'internal_ips', DEFAULT_INTERNAL_CIDRS)
 
   // Uma vez: testes da BuyGoods gravados como venda antes da regra "comissão 0
   // sem ID da visita = teste" passam a ser teste.
@@ -126,6 +147,16 @@ export function openDb(path) {
     db.exec(`UPDATE conversions SET status = 'test'
               WHERE status = 'approved' AND amount = 0 AND (subid IS NULL OR subid = '')`)
     db.exec(`INSERT INTO settings (key, value) VALUES ('fix_zero_tests_v1', 'true')`)
+  }
+
+  // Uma vez: reclassifica todas as visitas já guardadas com a regra de origem
+  // atual (robô, interno, pago por gbraid/wbraid/utm, etc.) — sem isso, só as
+  // visitas novas ganhariam a classificação nova.
+  if (!getSetting(db, 'reclassify_v2')) {
+    const cidrs = getSetting(db, 'internal_ips') || DEFAULT_INTERNAL_CIDRS
+    const upd = db.prepare('UPDATE clicks SET source = ? WHERE id = ?')
+    for (const r of db.prepare('SELECT * FROM clicks').all()) upd.run(classifySource(r, cidrs), r.id)
+    setSetting(db, 'reclassify_v2', true)
   }
 
   return db

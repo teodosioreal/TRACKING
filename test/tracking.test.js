@@ -54,8 +54,8 @@ test('venda vai para a planilha do Google Ads com gclid e comissão', () => {
   assert.equal(
     csv,
     'Parameters:TimeZone=+0000\r\n' +
-      'Google Click ID,Conversion Name,Conversion Time,Conversion Value,Conversion Currency\r\n' +
-      'ABC123,Compra BuyGoods,2026-10-26 13:05:09+0000,123.45,USD\r\n',
+      'Google Click ID,Conversion Name,Conversion Time,Conversion Value,Conversion Currency,GBRAID,WBRAID\r\n' +
+      'ABC123,Compra BuyGoods,2026-10-26 13:05:09+0000,123.45,USD,,\r\n',
   )
 })
 

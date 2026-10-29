@@ -1,5 +1,7 @@
 // Consultas do painel.
 
+import { EXCLUDED_SOURCES } from './source.js'
+
 function tzOffsetMs(tz, date) {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: tz,
@@ -61,6 +63,8 @@ const KEYWORD = `COALESCE(NULLIF(c.keyword,''), NULLIF(c.utm_term,''),
 // (orgânico, referência, direto). Vendas sem clique não têm origem e só
 // aparecem sem filtro.
 export const TRAFFIC = { pago: 'Pago', nao_pago: 'Não pago' }
+// Robô e interno ficam fora de todos os números (dashboards, funil...).
+const NOT_EXCLUDED = `(c.source IS NULL OR c.source NOT IN (${EXCLUDED_SOURCES.map((s) => `'${s}'`).join(',')}))`
 const PRODUCT_FILTER = `(? IS NULL OR c.product_id = ?)
   AND (? IS NULL OR (? = 'pago' AND c.source IN ('pago', 'pago_outro'))
                  OR (? = 'nao_pago' AND c.source IN ('organico', 'referencia', 'direto')))`
@@ -75,7 +79,7 @@ function breakdown(db, expr, from, to, limit, sc) {
   const visits = db
     .prepare(
       `SELECT ${expr} AS label, COUNT(*) AS visitas, SUM(c.outbound_at IS NOT NULL) AS cliques
-         FROM clicks c WHERE c.is_test = 0 AND c.created_at >= ? AND c.created_at < ? AND ${PRODUCT_FILTER}
+         FROM clicks c WHERE c.is_test = 0 AND ${NOT_EXCLUDED} AND c.created_at >= ? AND c.created_at < ? AND ${PRODUCT_FILTER}
         GROUP BY label`,
     )
     .all(from, to, ...sc)
@@ -104,7 +108,7 @@ export function dashboard(db, period, tz, now = new Date(), productId = null, tr
   const t = db
     .prepare(
       `SELECT COUNT(*) AS visitas, SUM(outbound_at IS NOT NULL) AS cliques, SUM(gclid IS NOT NULL) AS google
-         FROM clicks c WHERE c.is_test = 0 AND c.created_at >= ? AND c.created_at < ? AND ${PRODUCT_FILTER}`,
+         FROM clicks c WHERE c.is_test = 0 AND ${NOT_EXCLUDED} AND c.created_at >= ? AND c.created_at < ? AND ${PRODUCT_FILTER}`,
     )
     .get(from, to, ...sc)
   const s = db
@@ -191,7 +195,7 @@ export function timeSeries(db, period, tz, now = new Date(), productId = null, t
   const keys = [...buckets.keys()].slice(-90)
 
   const clicks = db
-    .prepare(`SELECT c.created_at FROM clicks c WHERE c.is_test = 0 AND c.created_at >= ? AND c.created_at < ? AND ${PRODUCT_FILTER}`)
+    .prepare(`SELECT c.created_at FROM clicks c WHERE c.is_test = 0 AND ${NOT_EXCLUDED} AND c.created_at >= ? AND c.created_at < ? AND ${PRODUCT_FILTER}`)
     .all(from, to, ...sc)
   const sales = db
     .prepare(
@@ -266,7 +270,7 @@ export function originBreakdown(db, period, tz, now = new Date(), productId = nu
   for (const r of db
     .prepare(
       `SELECT COALESCE(c.source, 'direto') AS k, COUNT(*) AS n FROM clicks c
-        WHERE c.is_test = 0 AND c.created_at >= ? AND c.created_at < ? AND ${PRODUCT_FILTER} GROUP BY k`,
+        WHERE c.is_test = 0 AND ${NOT_EXCLUDED} AND c.created_at >= ? AND c.created_at < ? AND ${PRODUCT_FILTER} GROUP BY k`,
     )
     .all(from, to, ...sc))
     get(r.k).visitas = r.n
@@ -279,5 +283,7 @@ export function originBreakdown(db, period, tz, now = new Date(), productId = nu
     .all(from, to, ...sc))
     Object.assign(get(r.k), { vendas: r.n, comissao: r.s || 0 })
   const order = ['pago', 'pago_outro', 'organico', 'referencia', 'direto', 'sem_clique']
-  return [...map.values()].filter((r) => r.origem !== 'teste').sort((a, b) => order.indexOf(a.origem) - order.indexOf(b.origem))
+  return [...map.values()]
+    .filter((r) => !['teste', ...EXCLUDED_SOURCES].includes(r.origem))
+    .sort((a, b) => order.indexOf(a.origem) - order.indexOf(b.origem))
 }

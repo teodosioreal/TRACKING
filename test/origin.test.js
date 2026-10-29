@@ -4,13 +4,14 @@ import { DatabaseSync } from 'node:sqlite'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { classifySource, uaInfo } from '../src/source.js'
+import { classifySource, uaInfo, parseCidrList, ipInCidr, isInternalIp } from '../src/source.js'
 import { openDb } from '../src/db.js'
 import { recordClick, recordPostback } from '../src/tracking.js'
-import { visitors, salesList, originBreakdown } from '../src/stats.js'
+import { visitors, salesList, originBreakdown, dashboard } from '../src/stats.js'
 import { createProduct, parseProductForm, deleteProduct, deleteConversion, getProduct } from '../src/products.js'
 
 const land = 'https://review.com/p'
+const cidrs = ['160.238.0.0/16', '9.9.9.9']
 
 test('origem da visita', () => {
   assert.equal(classifySource({ gclid: 'x', landing_url: land }), 'pago')
@@ -21,6 +22,50 @@ test('origem da visita', () => {
   assert.equal(classifySource({ referrer: 'https://review.com/outra', landing_url: land }), 'direto')
   assert.equal(classifySource({ landing_url: land }), 'direto')
   assert.equal(classifySource({ is_test: 1, gclid: 'x' }), 'teste')
+})
+
+test('origem: robô e interno, antes de pago (prioridade)', () => {
+  // Robô: user-agent de bot, ou IP de crawler/AdsBot do Google.
+  assert.equal(classifySource({ user_agent: 'Mozilla/5.0 (compatible; Googlebot/2.1)', landing_url: land }), 'robo')
+  assert.equal(classifySource({ ip: '66.249.66.1', landing_url: land }), 'robo')
+  assert.equal(classifySource({ ip: '209.85.1.1', landing_url: land }), 'robo')
+  // Bot com gclid continua robô, não pago.
+  assert.equal(classifySource({ user_agent: 'bot', gclid: 'x', landing_url: land }), 'robo')
+
+  // Interno: IP em "Meus IPs", ou referrer ads.google.com (prévia do anúncio).
+  assert.equal(classifySource({ ip: '160.238.5.1', landing_url: land }, cidrs), 'interno')
+  assert.equal(classifySource({ ip: '9.9.9.9', landing_url: land }, cidrs), 'interno')
+  assert.equal(classifySource({ ip: '160.239.0.1', landing_url: land }, cidrs), 'direto') // fora da faixa
+  assert.equal(classifySource({ referrer: 'https://ads.google.com/aw/overview', landing_url: land }), 'interno')
+  // IP interno com gclid continua interno, não pago.
+  assert.equal(classifySource({ ip: '160.238.5.1', gclid: 'x', landing_url: land }, cidrs), 'interno')
+})
+
+test('origem: pago por gbraid/wbraid/utm_source=google', () => {
+  assert.equal(classifySource({ gbraid: 'x', landing_url: land }), 'pago')
+  assert.equal(classifySource({ wbraid: 'x', landing_url: land }), 'pago')
+  assert.equal(classifySource({ utm_medium: 'cpc', utm_source: 'google', landing_url: land }), 'pago')
+  assert.equal(classifySource({ utm_medium: 'ppc', utm_source: 'Google', landing_url: land }), 'pago')
+  // utm_source=google sem medium pago não é "Pago Google".
+  assert.equal(classifySource({ utm_source: 'google', landing_url: land }), 'direto')
+})
+
+test('parseCidrList valida IPs e faixas CIDR', () => {
+  assert.deepEqual(parseCidrList('160.238.0.0/16, 1.2.3.4\n9.9.9.9/32'), {
+    cidrs: ['160.238.0.0/16', '1.2.3.4/32', '9.9.9.9/32'],
+    error: null,
+  })
+  assert.equal(parseCidrList('').cidrs.length, 0)
+  const bad = parseCidrList('não-é-ip')
+  assert.equal(bad.cidrs, null)
+  assert.ok(bad.error)
+})
+
+test('ipInCidr / isInternalIp', () => {
+  assert.equal(ipInCidr('160.238.1.1', '160.238.0.0/16'), true)
+  assert.equal(ipInCidr('160.239.1.1', '160.238.0.0/16'), false)
+  assert.equal(isInternalIp('160.238.1.1', cidrs), true)
+  assert.equal(isInternalIp('1.1.1.1', cidrs), false)
 })
 
 test('aparelho e navegador', () => {
@@ -58,6 +103,26 @@ test('visitantes, vendas reais (sem testes) e origem', () => {
 
   assert.equal(deleteConversion(db, sales.find((r) => r.order_id === '2').id), true)
   assert.equal(salesList(db, { period: 'hoje', tz: 'America/Sao_Paulo', now }).length, 1)
+})
+
+test('robô e interno ficam fora dos números, mas aparecem em Visitantes', () => {
+  const db = openDb(':memory:')
+  const now = new Date('2026-10-26T15:00:00Z')
+  recordClick(db, { cid: 'visitaPG1', url: land + '?gclid=G1', ip: '1.1.1.1' }, now)
+  recordClick(db, { cid: 'visitaRB1', url: land, userAgent: 'Googlebot/2.1', ip: '1.1.1.1' }, now)
+  recordClick(db, { cid: 'visitaIN1', url: land, ip: '160.238.1.1' }, now)
+  recordPostback(db, new URLSearchParams('subid=visitaPG1&order=1&amount=50'), now)
+
+  const v = visitors(db, { period: 'hoje', tz: 'America/Sao_Paulo', now })
+  assert.equal(v.length, 3) // auditáveis em Visitantes
+  assert.equal(v.find((r) => r.id === 'visitaRB1').source, 'robo')
+  assert.equal(v.find((r) => r.id === 'visitaIN1').source, 'interno')
+
+  assert.equal(dashboard(db, 'hoje', 'America/Sao_Paulo', now).totals.visitas, 1) // só a paga
+  const o = Object.fromEntries(originBreakdown(db, 'hoje', 'America/Sao_Paulo', now).map((r) => [r.origem, r]))
+  assert.equal(o.robo, undefined)
+  assert.equal(o.interno, undefined)
+  assert.equal(o.pago.visitas, 1)
 })
 
 test('excluir produto apaga visitas e vendas dele, e só dele', () => {

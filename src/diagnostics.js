@@ -185,7 +185,7 @@ export function runDiagnostics(db, { now = new Date(), health = null, exportDays
     const v = db
       .prepare(
         `SELECT COUNT(*) AS total, SUM(gclid IS NOT NULL) AS pagas, SUM(gclid IS NOT NULL AND campaign_id IS NULL AND utm_campaign IS NULL) AS semCamp
-           FROM clicks WHERE product_id = ? AND is_test = 0 AND created_at >= ?`,
+           FROM clicks WHERE product_id = ? AND is_test = 0 AND (source IS NULL OR source NOT IN ('robo','interno')) AND created_at >= ?`,
       )
       .get(p.id, new Date(t - 14 * DAY).toISOString())
     if (v.total > 0 && !v.pagas)
