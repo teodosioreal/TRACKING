@@ -17,6 +17,14 @@
   // Caminho do link de afiliado (só vale quando o link é um redirecionador no
   // próprio site, ex.: /go/produto).
   var AFF_PATH = '__PATH__'
+  // Destino final desse redirecionador (o rastreador descobre sozinho). Com ele,
+  // o clique vai direto para a oferta com o ID da visita, sem passar pelo
+  // redirecionador, que pode descartar o ?subid=. Vazio: o link fica como está.
+  var FINAL = '__FINAL__'
+  var finalUrl = null
+  try {
+    if (FINAL) finalUrl = new URL(FINAL)
+  } catch (e) {}
   var HERE = location.hostname.replace(/^www\./, '').toLowerCase()
   var KEY = 'rt_visita' + (PID ? '_' + PID : '')
   var TTL = 90 * 864e5
@@ -79,6 +87,7 @@
     try {
       var u = new URL(href, location.href)
       if (!/^https?:$/.test(u.protocol)) return false
+      if (isFinal(u)) return true
       var host = u.hostname.toLowerCase()
       for (var i = 0; i < domains.length; i++) {
         var d = domains[i]
@@ -94,6 +103,16 @@
     } catch (e) {
       return false
     }
+  }
+
+  // O destino final do redirecionador deste produto (mesmo domínio e caminho).
+  function isFinal(u) {
+    return Boolean(finalUrl) && u.hostname === finalUrl.hostname && u.pathname === finalUrl.pathname
+  }
+
+  // O link é o redirecionador do próprio site (/go/produto)?
+  function isOwnRedirect(u) {
+    return Boolean(AFF_PATH) && u.hostname.replace(/^www\./, '').toLowerCase() === HERE && u.pathname.toLowerCase().indexOf(AFF_PATH) === 0
   }
 
   function sameOffer(u) {
@@ -113,6 +132,14 @@
   function tagUrl(href) {
     try {
       var u = new URL(href, location.href)
+      // /go/produto → destino final, levando junto o que estava no link.
+      if (finalUrl && isOwnRedirect(u)) {
+        var f = new URL(finalUrl.toString())
+        u.searchParams.forEach(function (v, k) {
+          if (!f.searchParams.has(k)) f.searchParams.set(k, v)
+        })
+        u = f
+      }
       var old = u.searchParams.get(param)
       if (old === cid) return u.toString()
       // Um subid fixo que já estava no link (ex.: "adsgoogle") vai para o subid2.

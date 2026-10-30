@@ -38,6 +38,7 @@ import {
   MAX_IMAGE_BYTES,
 } from './src/products.js'
 import { checkPage } from './src/verify.js'
+import { finalAffiliateUrl } from './src/redirect.js'
 import {
   dashboardPage,
   productsPage,
@@ -261,6 +262,7 @@ async function handlePublic(req, res, url) {
   if (path === '/t.js' && method === 'GET') {
     const pid = url.searchParams.get('p')
     const product = isValidPid(pid) ? getProduct(db, pid) : null
+    const finalUrl = product ? (await finalAffiliateUrl(product)).replace(/[\\'"<>\s]/g, encodeURIComponent) : ''
     const js = trackerJs
       .replace('__BASE__', baseUrl(req))
       .replace('__PRODUCT__', product ? product.id : '')
@@ -268,6 +270,9 @@ async function handlePublic(req, res, url) {
       .replace('__PARAM__', product ? trackingParam(product) : '')
       .replace('__PATH__', product ? affiliatePath(product).replace(/[^a-z0-9/_.~%-]/g, '') : '')
       .replace('__MATCH__', JSON.stringify(affiliateMatch(product)).replace(/</g, '\\u003c'))
+      // Link /go/ do próprio site: destino final, para o clique não passar
+      // pelo redirecionador (que pode descartar o subid).
+      .replace('__FINAL__', () => finalUrl)
     send(res, 200, js, 'application/javascript; charset=utf-8', { ...CORS, 'Cache-Control': 'public, max-age=300' })
     return true
   }
