@@ -1096,7 +1096,7 @@ export function salesPage(rows, { period, tz, currency, products, productId, ori
     `<div class="kpi ${cls}"><span>${label}</span><b>${value}</b>${note ? `<small>${note}</small>` : ''}</div>`
   const body = table(
     [
-      { label: 'Quando', html: (r) => `${esc(when(r.created_at, tz))}<span class="sub2">${ago(r.created_at)}</span>` },
+      { label: 'Quando', html: (r) => `<a href="/vendas/${r.id}" title="Ver o clique que gerou esta venda">${esc(when(r.created_at, tz))}</a><span class="sub2">${ago(r.created_at)}</span>` },
       { label: 'Status', html: saleStatus },
       { label: 'Produto', html: (r) => esc(r.produto || r.product || '—') },
       { label: 'Origem', html: (r) => originTag(r.origem) },
@@ -1113,6 +1113,7 @@ export function salesPage(rows, { period, tz, currency, products, productId, ori
               : '<span class="muted" title="Sem gclid: não dá para enviar ao Google Ads">sem gclid</span>',
       },
       { label: 'Comissão', n: 1, html: (r) => money(r.amount, currency) },
+      { label: '', html: (r) => `<a class="mini" href="/vendas/${r.id}">Ver clique</a>${r.status === 'approved' && r.gclid ? ` · <a class="mini" href="/vendas/${r.id}.csv" title="CSV desta venda para subir à mão no Google Ads">CSV</a>` : ''}` },
       {
         label: '',
         html: (r) =>
@@ -1142,9 +1143,95 @@ ${kpi('Sem clique', semClique, 'venda sem visita registrada')}
 ${kpi('Reembolsos', refunds)}
 </div>
 <section><div class="toolbar"><b>${rows.length} registro(s)</b>
+${
+  productId
+    ? `<a class="btn" style="margin-left:12px" href="/vendas.csv?${new URLSearchParams({ periodo: period, produto: productId })}" title="Vendas com gclid deste produto no período, no modelo de upload do Google Ads">Baixar CSV para o Google Ads</a>`
+    : '<span class="muted" style="margin-left:12px">Escolha um produto para baixar o CSV do Google Ads.</span>'
+}
 <a style="margin-left:auto" href="/vendas?${new URLSearchParams({ periodo: period, ...(productId ? { produto: productId } : {}), ...(origin ? { origem: origin } : {}), ...(tests ? {} : { testes: '1' }) })}">${tests ? 'Esconder testes' : 'Mostrar testes'}</a></div>
 ${body}</section>
 <p class="muted">“Sem clique”: a venda chegou da BuyGoods sem um ID de visita do rastreador (o comprador não passou pela página com o script, ou o link não levou o subid). Essas vendas não vão para o Google Ads.</p>`,
+  )
+}
+
+// ---------------------------------------------------------------- Venda (detalhe)
+
+// Tempo entre o clique e a venda, em palavras ("2 h 15 min", "3 dias").
+function gap(fromIso, toIso) {
+  const m = Math.max(0, Math.round((new Date(toIso) - new Date(fromIso)) / 60000))
+  if (m < 60) return `${m} min`
+  if (m < 48 * 60) return `${Math.floor(m / 60)} h ${m % 60} min`
+  return `${Math.round(m / 1440)} dias`
+}
+
+// Uma venda e o clique que gerou ela, com o CSV para subir à mão no Google Ads.
+export function saleDetailPage(d, { tz, currency, csv, exportDays }) {
+  const row = (label, value) => `<tr><td class="muted" style="width:220px">${label}</td><td>${value}</td></tr>`
+  const val = (v) => (v ? esc(v) : '<span class="muted">—</span>')
+  const code = (v) => (v ? `<code style="word-break:break-all">${esc(v)}</code>` : '<span class="muted">—</span>')
+  const u = uaInfo(d.user_agent || '')
+  // O que a plataforma mandou no postback, sem a chave.
+  const params = (() => {
+    try {
+      return [...new URLSearchParams(d.raw || '')].filter(([k]) => k !== 'key')
+    } catch {
+      return []
+    }
+  })()
+  const idGoogle = d.gclid || d.gbraid || d.wbraid
+  const dentroJanela = Date.now() - new Date(d.created_at).getTime() < exportDays * 86400e3
+
+  let google
+  if (d.status !== 'approved') google = `<p class="muted">Não vai para o Google Ads (${saleStatus(d)}).</p>`
+  else if (!d.visita) google = '<p class="bad"><b>Sem clique:</b> a venda chegou sem o ID da visita (subid), então não dá para saber de qual anúncio veio. Não vai para o Google Ads.</p>'
+  else if (!idGoogle) google = '<p class="muted">A visita não veio de anúncio do Google (sem gclid). Não vai para o Google Ads.</p>'
+  else if (!d.gclid)
+    google = `<p class="warn"><b>Clique de iPhone (${d.gbraid ? 'gbraid' : 'wbraid'}), sem gclid.</b> O modelo de upload manual do Google Ads só aceita gclid, então esta venda não entra no CSV manual.</p>`
+  else
+    google = `<p>${d.is_test ? '<span class="tag warn">visita de teste</span> ' : ''}${dentroJanela ? '<span class="tag ok">na planilha</span> O script deste produto envia esta venda sozinho.' : `<span class="tag warn">fora da janela de ${exportDays} dias</span> O script não envia mais: suba o CSV à mão.`}</p>
+<p>Linha que vai para o Google Ads (conversão <b>${esc(d.conversion_name || '—')}</b>):</p>
+${copy('csv-linha', csv.csv.trim().split('\r\n').slice(1).join('\n'), 'Copiar')}
+<div class="actions"><a class="btn primary" href="/vendas/${d.id}.csv">Baixar CSV desta venda</a></div>
+<details class="howto"><summary>Como subir à mão no Google Ads</summary><ol>
+<li>Na <b>conta de anúncios</b> do produto: ${where('Metas → Conversões → Uploads → +')}.</li>
+<li>Fonte: <b>Fazer upload de um arquivo</b> → escolha o CSV baixado → <b>Visualizar</b> e depois <b>Aplicar</b>.</li>
+<li>O Google ignora a venda que já tinha recebido (mesmo gclid, nome e horário): subir de novo não conta em dobro.</li>
+<li>O resultado (aceita ou o motivo da recusa) aparece na própria lista de Uploads em algumas horas.</li></ol></details>`
+
+  return layout(
+    `Venda ${d.order_id || d.id} — Tracking`,
+    'vendas',
+    `<div class="crumbs"><a href="/vendas">Vendas</a> /</div><h2 class="title">Venda ${esc(d.order_id || `#${d.id}`)} ${saleStatus(d)}</h2>
+<p class="sub">${esc(d.produto || d.codename || 'Produto não identificado')} · ${money(d.amount, currency)} · chegou ${esc(when(d.created_at, tz))} (${ago(d.created_at)})</p>
+
+<section><h3>Google Ads</h3><div class="box">${google}</div></section>
+
+<section><h3>O clique que gerou a venda</h3>${
+      d.visita
+        ? `<table><tbody>
+${row('Chegou na página', `${esc(when(d.visita_at, tz))} <span class="muted">· ${gap(d.visita_at, d.created_at)} antes da venda</span>`)}
+${row('Origem', originTag(d.source))}
+${row('Página de entrada', d.landing_url ? `<a href="${esc(d.landing_url)}" target="_blank" rel="noopener" style="word-break:break-all">${esc(d.landing_url)}</a>` : val(null))}
+${row('gclid', code(d.gclid))}
+${d.gbraid ? row('gbraid (iPhone)', code(d.gbraid)) : ''}${d.wbraid ? row('wbraid (iPhone)', code(d.wbraid)) : ''}
+${row('Campanha (ID)', val(d.campaign_id || d.utm_campaign))}
+${row('Grupo de anúncios (ID)', val(d.adgroup_id))}
+${row('Palavra-chave', `${val(d.keyword || d.utm_term)}${d.matchtype ? ` <span class="muted">(${esc({ e: 'exata', p: 'frase', b: 'ampla' }[d.matchtype] || d.matchtype)})</span>` : ''}`)}
+${row('Rede', val({ g: 'Pesquisa Google', s: 'Parceiros de pesquisa', d: 'Display', ytv: 'YouTube', x: 'Performance Max' }[d.network] || d.network))}
+${row('Aparelho', `${esc(u.device)}<span class="muted"> · ${esc([u.os, u.browser].filter(Boolean).join(' · '))}</span>`)}
+${row('IP', code(d.ip))}
+${row('Veio de', val(d.referrer))}
+${row('Clicou para comprar', d.outbound_at ? `${esc(when(d.outbound_at, tz))}${d.outbound_count > 1 ? ` <span class="muted">(${d.outbound_count} cliques)</span>` : ''}` : '<span class="muted">não registrado</span>')}
+${row('ID da visita (subid)', code(d.visita))}
+</tbody></table>`
+        : `<div class="box"><p class="bad"><b>Nenhum clique ligado a esta venda.</b></p><p class="muted">${d.subid ? `A BuyGoods mandou o subid <code>${esc(d.subid)}</code>, mas o rastreador não tem visita com esse ID (página sem o script, ou o subid é fixo de outro lugar).` : 'A BuyGoods mandou a venda sem subid: o link de compra não levou o ID da visita.'}</p></div>`
+    }</section>
+
+<section><h3>O que a plataforma mandou (postback)</h3>${
+      params.length
+        ? `<table><tbody>${params.map(([k, v]) => row(`<code>${esc(k)}</code>`, code(v))).join('')}</tbody></table>`
+        : '<div class="box"><p class="muted">Sem dados.</p></div>'
+    }</section>`,
   )
 }
 

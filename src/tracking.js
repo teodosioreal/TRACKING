@@ -175,6 +175,55 @@ export function recordPostback(db, params, now = new Date()) {
   return { duplicate: res.changes === 0, refund: isRefund, test: isTest, subid, orderId, amount, type }
 }
 
+// Vendas aprovadas com identificador do Google (gclid, gbraid ou wbraid).
+// "ids" restringe a vendas específicas; "to" fecha o período.
+function salesForGoogle(db, { conversionName, from = '0000', to = '9999', productId = null, excludeProductIds = [], ids = null }) {
+  return db
+    .prepare(
+      `SELECT v.id, c.gclid, c.gbraid, c.wbraid, v.created_at, v.amount, COALESCE(p.conversion_name, ?) AS name
+         FROM conversions v
+         JOIN clicks c ON c.id = v.subid
+         LEFT JOIN products p ON p.id = c.product_id
+        WHERE v.status = 'approved' AND (c.gclid IS NOT NULL OR c.gbraid IS NOT NULL OR c.wbraid IS NOT NULL)
+          AND v.created_at >= ? AND v.created_at < ? AND (? IS NULL OR c.product_id = ?)
+          AND (c.product_id IS NULL OR c.product_id NOT IN (SELECT value FROM json_each(?)))
+          AND (? IS NULL OR v.id IN (SELECT value FROM json_each(?)))
+        ORDER BY v.created_at`,
+    )
+    .all(conversionName, from, to, productId ?? null, productId ?? null, JSON.stringify(excludeProductIds), ids ? 1 : null, JSON.stringify(ids || []))
+}
+
+// Planilha para subir à mão no Google Ads (Metas → Conversões → Uploads), no
+// modelo "Conversões de cliques": só as 5 colunas do modelo, horário em UTC
+// declarado na primeira linha. Vendas só com gbraid/wbraid (iPhone) não cabem
+// nesse modelo e voltam em "semGclid", para o painel avisar.
+export function manualUploadCsv(db, { conversionName, currency, productId, from, to, ids }) {
+  const rows = salesForGoogle(db, { conversionName, from, to, productId, ids })
+  const comGclid = rows.filter((r) => r.gclid)
+  const lines = ['Parameters:TimeZone=+0000', 'Google Click ID,Conversion Name,Conversion Time,Conversion Value,Conversion Currency']
+  for (const r of comGclid) {
+    lines.push([r.gclid, r.name, googleTime(r.created_at).replace(/\+0000$/, ''), r.amount.toFixed(2), currency].map(csvCell).join(','))
+  }
+  return { csv: lines.join('\r\n') + '\r\n', vendas: comGclid.length, semGclid: rows.length - comGclid.length }
+}
+
+// Tudo sobre uma venda e o clique que gerou ela (tela de detalhe da venda).
+export function saleDetail(db, id) {
+  return (
+    db
+      .prepare(
+        `SELECT v.id, v.created_at, v.subid, v.order_id, v.type, v.amount, v.product AS codename, v.status, v.raw,
+                c.id AS visita, c.created_at AS visita_at, c.gclid, c.gbraid, c.wbraid, c.campaign_id, c.adgroup_id,
+                c.keyword, c.matchtype, c.device, c.network, c.utm_source, c.utm_medium, c.utm_campaign, c.utm_term,
+                c.utm_content, c.landing_url, c.referrer, c.ip, c.user_agent, c.outbound_at, c.outbound_count,
+                c.source, c.is_test, c.product_id, p.name AS produto, p.conversion_name
+           FROM conversions v LEFT JOIN clicks c ON c.id = v.subid LEFT JOIN products p ON p.id = c.product_id
+          WHERE v.id = ?`,
+      )
+      .get(id) || null
+  )
+}
+
 // "2026-10-26 15:04:05+0000" — formato aceito pelo Google Ads.
 export function googleTime(iso) {
   return iso.slice(0, 19).replace('T', ' ') + '+0000'
@@ -196,18 +245,7 @@ function csvCell(v) {
 // para a mesma venda não ir para duas contas.
 export function exportGoogleAdsCsv(db, { conversionName, currency, days, productId, excludeProductIds = [] }, now = new Date()) {
   const since = new Date(now.getTime() - days * 86400000).toISOString()
-  const rows = db
-    .prepare(
-      `SELECT c.gclid, c.gbraid, c.wbraid, v.created_at, v.amount, COALESCE(p.conversion_name, ?) AS name
-         FROM conversions v
-         JOIN clicks c ON c.id = v.subid
-         LEFT JOIN products p ON p.id = c.product_id
-        WHERE v.status = 'approved' AND (c.gclid IS NOT NULL OR c.gbraid IS NOT NULL OR c.wbraid IS NOT NULL)
-          AND v.created_at >= ? AND (? IS NULL OR c.product_id = ?)
-          AND (c.product_id IS NULL OR c.product_id NOT IN (SELECT value FROM json_each(?)))
-        ORDER BY v.created_at`,
-    )
-    .all(conversionName, since, productId ?? null, productId ?? null, JSON.stringify(excludeProductIds))
+  const rows = salesForGoogle(db, { conversionName, from: since, productId, excludeProductIds })
 
   const lines = [
     'Parameters:TimeZone=+0000',

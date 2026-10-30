@@ -4,8 +4,8 @@ import { timingSafeEqual } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { openDb, getSetting, setSetting } from './src/db.js'
-import { recordClick, recordOutbound, recordPing, recordPostback, exportGoogleAdsCsv, pageKey } from './src/tracking.js'
-import { dashboard, timeSeries, visitors, salesList, originBreakdown, PERIODS, TRAFFIC } from './src/stats.js'
+import { recordClick, recordOutbound, recordPing, recordPostback, exportGoogleAdsCsv, manualUploadCsv, saleDetail, pageKey } from './src/tracking.js'
+import { dashboard, timeSeries, visitors, salesList, originBreakdown, periodRange, PERIODS, TRAFFIC } from './src/stats.js'
 import { checkHttps } from './src/health.js'
 import { parseScriptReport } from './src/report.js'
 import { runDiagnostics } from './src/diagnostics.js'
@@ -53,6 +53,7 @@ import {
   PRODUCT_TABS,
   visitorsPage,
   salesPage,
+  saleDetailPage,
   ORIGIN_FILTERS,
   loginPage,
   diagnosticsPage,
@@ -174,6 +175,11 @@ function send(res, status, body, type = 'text/plain; charset=utf-8', extra = {})
 
 const html = (res, body, status = 200) => send(res, status, body, 'text/html; charset=utf-8')
 const redirect = (res, to, headers = {}) => send(res, 303, '', 'text/plain', { Location: to, ...headers })
+// Baixa o CSV (com BOM para abrir certo no Excel; o Google Ads aceita).
+const sendCsv = (res, csv, name) =>
+  send(res, 200, '﻿' + csv, 'text/csv; charset=utf-8', {
+    'Content-Disposition': `attachment; filename="${name.replace(/[^\w.-]+/g, '-')}"`,
+  })
 
 const CORS = { 'Access-Control-Allow-Origin': '*' }
 
@@ -708,6 +714,25 @@ async function handleAdmin(req, res, url) {
         tests,
       }),
     )
+  }
+
+  // CSV para subir à mão no Google Ads: sempre de UM produto (o nome da
+  // conversão e a conta são do produto), no período escolhido em Vendas.
+  if (path === '/vendas.csv' && method === 'GET') {
+    const { period, product } = listFilters()
+    if (!product) return send(res, 400, 'Escolha um produto: o CSV é sempre de um produto só.')
+    const [from, to] = periodRange(period, cfg.tz)
+    const { csv } = manualUploadCsv(db, { conversionName: product.conversion_name, currency: cfg.currency, productId: product.id, from, to })
+    return sendCsv(res, csv, `google-ads-${product.name}-${period}.csv`)
+  }
+
+  const md = path.match(/^\/vendas\/(\d+)(\.csv)?$/)
+  if (md && method === 'GET') {
+    const sale = saleDetail(db, Number(md[1]))
+    if (!sale) return send(res, 404, 'venda não encontrada')
+    const one = manualUploadCsv(db, { conversionName: sale.conversion_name || defaultConversion(), currency: cfg.currency, ids: [sale.id] })
+    if (md[2]) return sendCsv(res, one.csv, `google-ads-${sale.produto || 'venda'}-pedido-${sale.order_id || sale.id}.csv`)
+    return html(res, saleDetailPage(sale, { tz: cfg.tz, currency: cfg.currency, csv: one, exportDays: cfg.exportDays }))
   }
 
   const mv = path.match(/^\/vendas\/(\d+)\/excluir$/)
